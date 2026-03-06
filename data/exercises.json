@@ -1,0 +1,452 @@
+{
+  "sessions": [
+    {
+      "id": "session_001",
+      "createdAt": "2026-03-05",
+      "completed": false,
+      "questions": [
+        {
+          "id": "session_001_q1",
+          "question": "5 + 3 = ?",
+          "answer": 8,
+          "type": "addition",
+          "difficulty": "easy"
+        },
+        {
+          "id": "session_001_q2",
+          "question": "12 - 4 = ?",
+          "answer": 8,
+          "type": "subtraction",
+          "difficulty": "easy"
+        },
+        {
+          "id": "session_001_q3",
+          "question": "6 × 3 = ?",
+          "answer": 18,
+          "type": "multiplication",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_001_q4",
+          "question": "20 ÷ 4 = ?",
+          "answer": 5,
+          "type": "division",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_001_q5",
+          "question": "9 + 7 = ?",
+          "answer": 16,
+          "type": "addition",
+          "difficulty": "easy"
+        },
+        {
+          "id": "session_001_q6",
+          "question": "15 - 6 = ?",
+          "answer": 9,
+          "type": "subtraction",
+          "difficulty": "easy"
+        },
+        {
+          "id": "session_001_q7",
+          "question": "7 × 4 = ?",
+          "answer": 28,
+          "type": "multiplication",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_001_q8",
+          "question": "36 ÷ 6 = ?",
+          "answer": 6,
+          "type": "division",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_001_q9",
+          "question": "14 + 8 = ?",
+          "answer": 22,
+          "type": "addition",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_001_q10",
+          "question": "25 - 9 = ?",
+          "answer": 16,
+          "type": "subtraction",
+          "difficulty": "medium"
+        }
+      ]
+    },
+    {
+      "id": "session_002",
+      "createdAt": "2026-03-05",
+      "completed": false,
+      "questions": [
+        {
+          "id": "session_002_q1",
+          "question": "Đặt tính rồi tính: 75 : 25",
+          "answer": 3,
+          "type": "division",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_002_q2",
+          "question": "Tính: 144 : 12",
+          "answer": 12,
+          "type": "division",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_002_q3",
+          "question": "Đặt tính rồi tính: 2856 : 34",
+          "answer": 84,
+          "type": "division",
+          "difficulty": "hard"
+        },
+        {
+          "id": "session_002_q4",
+          "question": "Tính theo mẫu: 4368 : 24",
+          "answer": 182,
+          "type": "division",
+          "difficulty": "hard"
+        },
+        {
+          "id": "session_002_q5",
+          "question": "Hoàn thành bảng: Số bị chia 6666, số chia 33. Tìm thương.",
+          "answer": 202,
+          "type": "division",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_002_q6",
+          "question": "Tính giá trị của biểu thức: 3600 : 60 : 15",
+          "answer": 4,
+          "type": "mixed_operations",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_002_q7",
+          "question": "Tính: 720 : (4 × 5)",
+          "answer": 36,
+          "type": "mixed_operations",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_002_q8",
+          "question": "Tìm số chưa biết: ? × 35 = 1750",
+          "answer": 50,
+          "type": "find_unknown",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_002_q9",
+          "question": "Tìm số chưa biết: 306 : ? = 18",
+          "answer": 17,
+          "type": "find_unknown",
+          "difficulty": "medium"
+        },
+        {
+          "id": "session_002_q10",
+          "question": "Một khu vườn hình chữ nhật có diện tích 3600 m², chiều rộng 40 m. Tính chu vi khu vườn đó.",
+          "answer": 260,
+          "type": "word_problem",
+          "difficulty": "hard"
+        }
+      ]
+    },
+    {
+      "id": "session_003",
+      "createdAt": "2026-03-06",
+      "completed": true,
+      "imagePaths": [
+        "data/images/1772773732601_zv4mh8owirp.jpg",
+        "data/images/1772773732607_iie3tuqbwae.jpg",
+        "data/images/1772773732608_myl00jtavlr.jpg"
+      ],
+      "questions": [
+        {
+          "id": "session_003_q1",
+          "question": "Một cửa hàng nhập về 8190 quả trứng gà và 6000 quả trứng vịt. Trứng được để trong các vỉ, mỗi vỉ có 30 quả. Hỏi cả hai loại trứng có bao nhiêu quả?",
+          "answer": 14190,
+          "type": "addition",
+          "difficulty": "medium",
+          "unit": "quả"
+        },
+        {
+          "id": "session_003_q2",
+          "question": "Khoảng cách giữa hai cột đèn liên nhau là 34 m. Nếu có 5 cột đèn thì chiều dài đoạn đường từ cột đèn đầu tiên đến cột đèn cuối cùng là bao nhiêu?",
+          "answer": 136,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": "m"
+        },
+        {
+          "id": "session_003_q3",
+          "question": "564 chia 12 bằng bao nhiêu?",
+          "answer": 47,
+          "type": "division",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_003_q4",
+          "question": "14721 : 57 = ?",
+          "answer": 258,
+          "type": "division",
+          "difficulty": "hard",
+          "unit": ""
+        },
+        {
+          "id": "session_003_q5",
+          "question": "Tính: 45 × ? = 2025",
+          "answer": 45,
+          "type": "division",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_003_q6",
+          "question": "Một khu vườn hình chữ nhật có diện tích là 4050 m², chiều rộng là 45 m. Tính chu vi khu vườn đó.",
+          "answer": 270,
+          "type": "geometry",
+          "difficulty": "hard",
+          "unit": "m"
+        }
+      ]
+    },
+    {
+      "id": "session_004",
+      "createdAt": "2026-03-06",
+      "imagePaths": [
+        "data/images/1772773732601_zv4mh8owirp.jpg",
+        "data/images/1772773732607_iie3tuqbwae.jpg",
+        "data/images/1772773732608_myl00jtavlr.jpg"
+      ],
+      "isExtra": true,
+      "questions": [
+        {
+          "id": "session_004_q1",
+          "question": "Một cửa hàng có 7 200 quả trứng gà và 5 400 quả trứng vịt. Tất cả được xếp vào các vỉ, mỗi vỉ có 24 quả. Hỏi cần bao nhiêu vỉ để xếp hết số trứng?",
+          "answer": 525,
+          "type": "word_problem",
+          "difficulty": "medium",
+          "unit": "vỉ"
+        },
+        {
+          "id": "session_004_q2",
+          "question": "Trên một đoạn đường có 8 cột đèn, khoảng cách giữa hai cột đèn liên nhau là 25 m. Tính chiều dài đoạn đường từ cột đèn đầu đến cột đèn cuối.",
+          "answer": 175,
+          "type": "word_problem",
+          "difficulty": "medium",
+          "unit": "m"
+        },
+        {
+          "id": "session_004_q3",
+          "question": "936 : 18 = ?",
+          "answer": 52,
+          "type": "division",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_004_q4",
+          "question": "15 624 : 72 = ?",
+          "answer": 217,
+          "type": "division",
+          "difficulty": "hard",
+          "unit": ""
+        },
+        {
+          "id": "session_004_q5",
+          "question": "Tìm số bị chia: ? : 15 = 148",
+          "answer": 2220,
+          "type": "division",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_004_q6",
+          "question": "Một khu vườn hình chữ nhật có diện tích 3 600 m² và chiều dài 60 m. Tính chu vi khu vườn đó.",
+          "answer": 240,
+          "type": "word_problem",
+          "difficulty": "medium",
+          "unit": "m"
+        },
+        {
+          "id": "session_004_q7",
+          "question": "7 538 : 46 = ? (dư ?)",
+          "answer": 163,
+          "type": "division",
+          "difficulty": "hard",
+          "unit": ""
+        },
+        {
+          "id": "session_004_q8",
+          "question": "Một xưởng may trong 5 ngày sản xuất được 1 350 chiếc áo. Hỏi trung bình mỗi ngày xưởng may được bao nhiêu chiếc áo?",
+          "answer": 270,
+          "type": "word_problem",
+          "difficulty": "medium",
+          "unit": "chiếc"
+        },
+        {
+          "id": "session_004_q9",
+          "question": "4 896 : 64 = ?",
+          "answer": 76,
+          "type": "division",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_004_q10",
+          "question": "Một cửa hàng có 2 880 quyển vở được xếp đều vào 48 hộp. Hỏi mỗi hộp có bao nhiêu quyển vở?",
+          "answer": 60,
+          "type": "word_problem",
+          "difficulty": "medium",
+          "unit": "quyển"
+        }
+      ],
+      "completed": true
+    },
+    {
+      "id": "session_005",
+      "createdAt": "2026-03-06",
+      "imagePaths": [
+        "data/images/1772782184822_jfztsxlhbsq.jpg"
+      ],
+      "questions": [
+        {
+          "id": "session_005_q1",
+          "question": "Tính nhẩm: 25 × 14 = ?",
+          "answer": 350,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_005_q2",
+          "question": "Tính nhẩm: 8 × 30 × 25 = ?",
+          "answer": 6000,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_005_q3",
+          "question": "Giá trị của biểu thức 15 240 × 42 là:",
+          "answer": 640080,
+          "type": "multiplication",
+          "difficulty": "hard",
+          "unit": ""
+        },
+        {
+          "id": "session_005_q4",
+          "question": "Một khu vườn hình chữ nhật có chiều dài 35 m, chiều rộng 18 m. Diện tích khu vườn đó là bao nhiêu?",
+          "answer": 630,
+          "type": "word_problem",
+          "difficulty": "medium",
+          "unit": "m²"
+        },
+        {
+          "id": "session_005_q5",
+          "question": "Ông Nam nuôi bò để lấy sữa. Mỗi con bò nhà ông Nam trung bình mỗi ngày cho 28 kg sữa. Hỏi một tháng 30 ngày, 15 con bò nhà ông Nam cho bao nhiêu ki-lô-gam sữa?",
+          "answer": 12600,
+          "type": "word_problem",
+          "difficulty": "hard",
+          "unit": "kg"
+        }
+      ],
+      "completed": true
+    },
+    {
+      "id": "session_006",
+      "createdAt": "2026-03-06",
+      "imagePaths": [
+        "data/images/1772782184822_jfztsxlhbsq.jpg"
+      ],
+      "isExtra": true,
+      "questions": [
+        {
+          "id": "session_006_q1",
+          "question": "Tính nhẩm: 24 × 15 = ?",
+          "answer": 360,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_006_q2",
+          "question": "Tính nhẩm: 18 × 13 = ?",
+          "answer": 234,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_006_q3",
+          "question": "Đặt tính rồi tính: 73 × 46",
+          "answer": 3358,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_006_q4",
+          "question": "Đặt tính rồi tính: 185 × 24",
+          "answer": 4440,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_006_q5",
+          "question": "Tính nhẩm: 6 × 40 × 25",
+          "answer": 6000,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_006_q6",
+          "question": "Tính nhẩm: 50 × 4 × 30",
+          "answer": 6000,
+          "type": "multiplication",
+          "difficulty": "medium",
+          "unit": ""
+        },
+        {
+          "id": "session_006_q7",
+          "question": "Giá trị của biểu thức 18 650 × 27 là bao nhiêu?",
+          "answer": 503550,
+          "type": "multiplication",
+          "difficulty": "hard",
+          "unit": ""
+        },
+        {
+          "id": "session_006_q8",
+          "question": "Một khu vườn hình chữ nhật có chiều dài 24 m, chiều rộng 16 m. Diện tích khu vườn đó là bao nhiêu?",
+          "answer": 384,
+          "type": "word_problem",
+          "difficulty": "medium",
+          "unit": "m²"
+        },
+        {
+          "id": "session_006_q9",
+          "question": "Cô Mai có 12 khay bánh mì. Mỗi khay có 18 cái bánh mì. Hỏi cô Mai có tất cả bao nhiêu cái bánh mì?",
+          "answer": 216,
+          "type": "word_problem",
+          "difficulty": "medium",
+          "unit": "cái"
+        },
+        {
+          "id": "session_006_q10",
+          "question": "Một trang trại nuôi gà. Mỗi ngày trang trại thu được 45 quả trứng từ mỗi chuồng gà. Trang trại có 16 chuồng gà. Hỏi một tháng 30 ngày, trang trại thu được bao nhiêu quả trứng?",
+          "answer": 21600,
+          "type": "word_problem",
+          "difficulty": "hard",
+          "unit": "quả"
+        }
+      ],
+      "completed": true
+    }
+  ]
+}
