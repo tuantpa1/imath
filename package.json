@@ -1,0 +1,13 @@
+{
+  "name": "imath",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "backend":  "cd backend && npm run dev",
+    "frontend": "cd frontend && npm run dev",
+    "start":    "node scripts/show-ip.js && concurrently -n BACK,FRONT -c cyan,magenta \"npm run backend\" \"npm run frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

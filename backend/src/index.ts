@@ -7,7 +7,7 @@ import uploadRoutes from './routes/uploadRoutes';
 const app = express();
 const PORT = 3001;
 
-app.use(cors({ origin: 'http://localhost:3000' }));
+app.use(cors({ origin: true }));
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
@@ -17,8 +17,8 @@ app.get('/health', (_req, res) => {
 app.use('/api', dataRoutes);
 app.use('/api', uploadRoutes);
 
-const server = app.listen(PORT, () => {
-  console.log(`iMath backend running on http://localhost:${PORT}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`iMath backend running on http://0.0.0.0:${PORT}`);
 });
 
 server.on('error', (err: NodeJS.ErrnoException) => {

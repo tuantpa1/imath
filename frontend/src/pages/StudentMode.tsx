@@ -2,10 +2,18 @@ import { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
+interface AnswerPart {
+  label: string;
+  answer: number;
+  unit: string;
+}
+
 interface Question {
   id: string;
   question: string;
-  answer: number;
+  answer?: number;
+  answers?: AnswerPart[];
+  order_matters?: boolean;
   type: string;
   difficulty?: string;
   unit?: string;
@@ -20,11 +28,22 @@ interface Session {
   questions: Question[];
 }
 
+interface WrongQuestionPart {
+  label: string;
+  correctAnswer: number;
+  studentAnswer: number;
+  unit: string;
+}
+
 interface WrongQuestion {
   question: string;
-  correctAnswer: string;
-  studentAnswer: string;
+  type?: string;
   date: string;
+  // single answer (old format, backward-compatible)
+  correctAnswer?: string;
+  studentAnswer?: string;
+  // multi answer
+  parts?: WrongQuestionPart[];
 }
 
 interface Scores {
@@ -49,7 +68,7 @@ interface StudentModeProps {
   onSwitchToParent: () => void;
 }
 
-const API = 'http://localhost:3001/api';
+const API = `${window.location.protocol}//${window.location.hostname}:3001/api`;
 const POINTS_PER_QUESTION = 10;
 const STORAGE_KEY = 'imath_progress';
 
@@ -124,6 +143,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
   const [totalDone, setTotalDone] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
   const [answerInput, setAnswerInput] = useState('');
+  const [multiInputs, setMultiInputs] = useState<string[]>([]);
   const [answerState, setAnswerState] = useState<AnswerState>('idle');
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [skipsUsed, setSkipsUsed] = useState(0);
@@ -204,6 +224,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     setTotalDone(0);
     setCorrectCount(0);
     setAnswerInput('');
+    setMultiInputs([]);
     setAnswerState('idle');
     setSkipsUsed(0);
     setView('exercise');
@@ -223,6 +244,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     setTotalDone(saved.totalDone);
     setCorrectCount(saved.correctCount);
     setAnswerInput('');
+    setMultiInputs([]);
     setAnswerState('idle');
     setSkipsUsed(0);
     setView('exercise');
@@ -273,6 +295,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     if (skipsUsed >= 2 || answerState !== 'idle' || !currentQ || skipping) return;
     setSkipping(true);
     try {
+      const isMultiAnswer = Array.isArray(currentQ.answers) && (currentQ.answers?.length ?? 0) > 0;
       const res = await fetch(`${API}/generate-skip`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -280,6 +303,9 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
           originalQuestion: currentQ.question,
           type: currentQ.type,
           difficulty: currentQ.difficulty ?? 'easy',
+          isMultiAnswer,
+          orderMatters: currentQ.order_matters ?? true,
+          answersCount: currentQ.answers?.length ?? 2,
         }),
       });
       if (res.ok) {
@@ -288,6 +314,8 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
           id: `skip_${Date.now()}`,
           question: data.question.question,
           answer: data.question.answer,
+          answers: data.question.answers,
+          order_matters: data.question.order_matters,
           type: data.question.type,
           difficulty: data.question.difficulty,
           unit: data.question.unit ?? '',
@@ -296,6 +324,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
         setCurrentQ(newQ);
         setSkipsUsed((s) => s + 1);
         setAnswerInput('');
+        setMultiInputs([]);
         setTimeout(() => inputRef.current?.focus(), 100);
       }
     } catch {
@@ -308,68 +337,184 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
   // ── Answer submission ────────────────────────────────────────────────────────
   async function handleCheckAnswer() {
     if (!currentQ || answerState !== 'idle') return;
-    const userAnswer = parseFloat(answerInput.trim());
-    if (isNaN(userAnswer)) return;
 
-    const unit = currentQ.unit ? ` ${currentQ.unit}` : '';
+    const isMulti = Array.isArray(currentQ.answers) && (currentQ.answers?.length ?? 0) > 0;
 
-    if (userAnswer === currentQ.answer) {
-      const newPoints = sessionPoints + POINTS_PER_QUESTION;
-      setSessionPoints(newPoints);
-      setCorrectCount((c) => c + 1);
-      setAnswerState('correct');
-      setFeedbackMsg('Đúng rồi! Giỏi lắm! 🎉');
-      setFloatPts({ id: Date.now(), pts: POINTS_PER_QUESTION, positive: true });
-      setTimeout(() => setFloatPts(null), 1200);
+    if (isMulti) {
+      const parts = currentQ.answers!;
+      const parsedInputs = parts.map((_, i) => parseFloat((multiInputs[i] ?? '').trim()));
+      if (parsedInputs.some(isNaN)) return;
 
-      const newTotal = scores.totalPoints + POINTS_PER_QUESTION;
-      const newScores: Scores = {
-        totalPoints: newTotal,
-        history: [
-          ...scores.history,
-          { date: today(), earned: POINTS_PER_QUESTION, activity: 'exercise session' },
-        ],
-        redeemed: scores.redeemed,
-        wrongQuestions: scores.wrongQuestions,
-      };
-      setScores(newScores);
-      await fetch(`${API}/scores`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newScores),
-      }).catch(() => {});
+      let allCorrect: boolean;
+      if (currentQ.order_matters === false) {
+        const studentSorted = [...parsedInputs].sort((a, b) => a - b);
+        const correctSorted = parts.map((p) => p.answer).sort((a, b) => a - b);
+        allCorrect = studentSorted.every((val, i) => val === correctSorted[i]);
+      } else {
+        allCorrect = parsedInputs.every((val, i) => val === parts[i].answer);
+      }
 
-      setTimeout(() => advanceQueue(), 1500);
+      if (allCorrect) {
+        const newPoints = sessionPoints + POINTS_PER_QUESTION;
+        setSessionPoints(newPoints);
+        setCorrectCount((c) => c + 1);
+        setAnswerState('correct');
+        setFeedbackMsg('✅ Tất cả đúng rồi! 🎉');
+        setFloatPts({ id: Date.now(), pts: POINTS_PER_QUESTION, positive: true });
+        setTimeout(() => setFloatPts(null), 1200);
+
+        const newTotal = scores.totalPoints + POINTS_PER_QUESTION;
+        const newScores: Scores = {
+          totalPoints: newTotal,
+          history: [
+            ...scores.history,
+            { date: today(), earned: POINTS_PER_QUESTION, activity: 'exercise session' },
+          ],
+          redeemed: scores.redeemed,
+          wrongQuestions: scores.wrongQuestions,
+        };
+        setScores(newScores);
+        await fetch(`${API}/scores`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newScores),
+        }).catch(() => {});
+
+        setTimeout(() => advanceQueue(), 1500);
+      } else {
+        setAnswerState('wrong');
+        setFloatPts({ id: Date.now(), pts: 5, positive: false });
+        setTimeout(() => setFloatPts(null), 1200);
+
+        const newTotal = Math.max(0, scores.totalPoints - 5);
+        const newSessionPts = Math.max(0, sessionPoints - 5);
+        setSessionPoints(newSessionPts);
+
+        const newWrongEntries: WrongQuestion[] = [];
+        let feedbackLines: string[];
+
+        if (currentQ.order_matters === false) {
+          // unordered: single summary feedback, save as one combined entry
+          const correctStr = parts
+            .map((p) => `${p.answer}${p.unit ? ' ' + p.unit : ''}`)
+            .join(' và ');
+          feedbackLines = [`❌ Sai rồi! 💪 Đáp án đúng là: ${correctStr}`];
+          newWrongEntries.push({
+            question: currentQ.question,
+            type: 'multi_answer',
+            date: today(),
+            parts: parts.map((part, i) => ({
+              label: part.label,
+              correctAnswer: part.answer,
+              studentAnswer: parsedInputs[i],
+              unit: part.unit ?? '',
+            })),
+          });
+        } else {
+          // ordered: per-part feedback, save as ONE combined entry
+          newWrongEntries.push({
+            question: currentQ.question,
+            type: 'multi_answer',
+            date: today(),
+            parts: parts.map((part, i) => ({
+              label: part.label,
+              correctAnswer: part.answer,
+              studentAnswer: parsedInputs[i],
+              unit: part.unit ?? '',
+            })),
+          });
+          feedbackLines = parts.map((part, i) => {
+            const unitStr = part.unit ? ` ${part.unit}` : '';
+            const isPartCorrect = parsedInputs[i] === part.answer;
+            return isPartCorrect
+              ? `✅ ${part.label}: ${part.answer}${unitStr} — Đúng!`
+              : `❌ ${part.label}: bạn điền ${parsedInputs[i]}, đáp án đúng là ${part.answer}${unitStr}`;
+          });
+        }
+
+        setFeedbackMsg(feedbackLines.join('\n'));
+
+        const newScores: Scores = {
+          totalPoints: newTotal,
+          history: scores.history,
+          redeemed: scores.redeemed,
+          wrongQuestions: [...scores.wrongQuestions, ...newWrongEntries],
+        };
+        setScores(newScores);
+        await fetch(`${API}/scores`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newScores),
+        }).catch(() => {});
+
+        setTimeout(() => advanceQueue(), 2500);
+      }
     } else {
-      setAnswerState('wrong');
-      setFeedbackMsg(`Đáp án đúng là: ${currentQ.answer}${unit}`);
-      setFloatPts({ id: Date.now(), pts: 5, positive: false });
-      setTimeout(() => setFloatPts(null), 1200);
+      // ── Single-answer (existing logic) ────────────────────────────────────────
+      const userAnswer = parseFloat(answerInput.trim());
+      if (isNaN(userAnswer)) return;
 
-      const newTotal = Math.max(0, scores.totalPoints - 5);
-      const newSessionPts = Math.max(0, sessionPoints - 5);
-      setSessionPoints(newSessionPts);
+      const unit = currentQ.unit ? ` ${currentQ.unit}` : '';
 
-      const wrongEntry: WrongQuestion = {
-        question: currentQ.question,
-        correctAnswer: `${currentQ.answer}${unit}`,
-        studentAnswer: answerInput.trim(),
-        date: today(),
-      };
-      const newScores: Scores = {
-        totalPoints: newTotal,
-        history: scores.history,
-        redeemed: scores.redeemed,
-        wrongQuestions: [...scores.wrongQuestions, wrongEntry],
-      };
-      setScores(newScores);
-      await fetch(`${API}/scores`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newScores),
-      }).catch(() => {});
+      if (userAnswer === currentQ.answer) {
+        const newPoints = sessionPoints + POINTS_PER_QUESTION;
+        setSessionPoints(newPoints);
+        setCorrectCount((c) => c + 1);
+        setAnswerState('correct');
+        setFeedbackMsg('Đúng rồi! Giỏi lắm! 🎉');
+        setFloatPts({ id: Date.now(), pts: POINTS_PER_QUESTION, positive: true });
+        setTimeout(() => setFloatPts(null), 1200);
 
-      setTimeout(() => advanceQueue(), 2000);
+        const newTotal = scores.totalPoints + POINTS_PER_QUESTION;
+        const newScores: Scores = {
+          totalPoints: newTotal,
+          history: [
+            ...scores.history,
+            { date: today(), earned: POINTS_PER_QUESTION, activity: 'exercise session' },
+          ],
+          redeemed: scores.redeemed,
+          wrongQuestions: scores.wrongQuestions,
+        };
+        setScores(newScores);
+        await fetch(`${API}/scores`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newScores),
+        }).catch(() => {});
+
+        setTimeout(() => advanceQueue(), 1500);
+      } else {
+        setAnswerState('wrong');
+        setFeedbackMsg(`Đáp án đúng là: ${currentQ.answer}${unit}`);
+        setFloatPts({ id: Date.now(), pts: 5, positive: false });
+        setTimeout(() => setFloatPts(null), 1200);
+
+        const newTotal = Math.max(0, scores.totalPoints - 5);
+        const newSessionPts = Math.max(0, sessionPoints - 5);
+        setSessionPoints(newSessionPts);
+
+        const wrongEntry: WrongQuestion = {
+          question: currentQ.question,
+          type: 'single',
+          correctAnswer: `${currentQ.answer}${unit}`,
+          studentAnswer: answerInput.trim(),
+          date: today(),
+        };
+        const newScores: Scores = {
+          totalPoints: newTotal,
+          history: scores.history,
+          redeemed: scores.redeemed,
+          wrongQuestions: [...scores.wrongQuestions, wrongEntry],
+        };
+        setScores(newScores);
+        await fetch(`${API}/scores`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newScores),
+        }).catch(() => {});
+
+        setTimeout(() => advanceQueue(), 2000);
+      }
     }
   }
 
@@ -391,6 +536,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     });
     setTotalDone((d) => d + 1);
     setAnswerInput('');
+    setMultiInputs([]);
     setAnswerState('idle');
     setTimeout(() => inputRef.current?.focus(), 100);
   }
@@ -504,8 +650,12 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     const isCorrect = answerState === 'correct';
     const isWrong = answerState === 'wrong';
     const isBusy = isCorrect || isWrong || skipping;
-    const unit = currentQ.unit || '';
     const skipsLeft = 2 - skipsUsed;
+    const isMultiAnswer = Array.isArray(currentQ.answers) && (currentQ.answers?.length ?? 0) > 0;
+    const allInputsFilled = isMultiAnswer
+      ? multiInputs.length === currentQ.answers!.length &&
+        multiInputs.every((v) => v.trim() !== '')
+      : answerInput.trim() !== '';
 
     return (
       <div
@@ -554,7 +704,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
         <main className="flex-1 flex flex-col items-center justify-center px-5 pb-8 gap-5">
           {/* Question card */}
           <div
-            className={`bg-white rounded-3xl shadow-2xl p-7 w-full max-w-md text-center transition-all duration-300 border-4 ${
+            className={`bg-white rounded-3xl shadow-2xl p-7 w-full max-w-md overflow-hidden text-center transition-all duration-300 border-4 ${
               isCorrect
                 ? 'border-green-400 scale-[1.02]'
                 : isWrong
@@ -563,7 +713,9 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
             }`}
           >
             <p className="text-gray-400 text-xs font-bold mb-3 uppercase tracking-widest">
-              {currentQ.type === 'word_problem' ? '📝 Bài toán' : '🧮 Tính'}
+              {currentQ.type === 'word_problem' || currentQ.type === 'multi_answer'
+                ? '📝 Bài toán'
+                : '🧮 Tính'}
             </p>
             <p className="text-2xl font-extrabold text-indigo-700 leading-relaxed mb-5">
               {currentQ.question}
@@ -572,41 +724,89 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
             {/* Feedback */}
             {(isCorrect || isWrong) && (
               <div
-                className={`animate-bounce-in text-xl font-extrabold py-3 px-4 rounded-2xl mb-4 ${
+                className={`animate-bounce-in text-lg font-extrabold py-3 px-4 rounded-2xl mb-4 text-left ${
                   isCorrect ? 'bg-green-50 text-green-600' : 'bg-rose-50 text-rose-500'
                 }`}
               >
-                {feedbackMsg}
+                {feedbackMsg.split('\n').map((line, i) => (
+                  <p key={i} className={i > 0 ? 'mt-1' : ''}>
+                    {line}
+                  </p>
+                ))}
               </div>
             )}
 
-            {/* Input row */}
+            {/* Answer inputs */}
             {!isCorrect && (
-              <div className="flex gap-2 items-center">
-                <input
-                  ref={inputRef}
-                  type="number"
-                  inputMode="numeric"
-                  value={answerInput}
-                  onChange={(e) => setAnswerInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isBusy}
-                  placeholder="Nhập đáp án..."
-                  className="input-glow flex-1 text-2xl font-extrabold text-center border-4 border-indigo-200 rounded-2xl py-3 px-3 focus:border-indigo-500 disabled:opacity-50 transition-all"
-                />
-                {unit && (
-                  <span className="bg-indigo-100 text-indigo-700 font-extrabold px-3 py-3 rounded-2xl text-lg whitespace-nowrap">
-                    {unit}
-                  </span>
-                )}
-                <button
-                  onClick={handleCheckAnswer}
-                  disabled={!answerInput.trim() || isBusy}
-                  className="btn-scale bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white font-extrabold text-xl px-4 rounded-2xl py-3 shadow-md"
-                >
-                  ✓
-                </button>
-              </div>
+              isMultiAnswer ? (
+                <div className="flex flex-col gap-3 mt-2 w-full">
+                  {currentQ.order_matters === false ? (
+                    <p className="text-indigo-400 text-xs font-semibold text-center">
+                      (Không cần theo thứ tự) 💡
+                    </p>
+                  ) : (
+                    <p className="text-indigo-400 text-xs font-semibold text-center">
+                      Điền đúng vào từng ô nhé! 📝
+                    </p>
+                  )}
+                  {currentQ.answers!.map((part, i) => (
+                    <div key={i} className="flex gap-2 items-center w-full min-w-0">
+                      <span className="text-indigo-600 font-bold text-sm flex-shrink-0 text-right">
+                        {part.label}:
+                      </span>
+                      <input
+                        ref={i === 0 ? inputRef : undefined}
+                        type="number"
+                        inputMode="numeric"
+                        value={multiInputs[i] ?? ''}
+                        onChange={(e) => {
+                          const next = [...multiInputs];
+                          next[i] = e.target.value;
+                          setMultiInputs(next);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && i === currentQ.answers!.length - 1)
+                            handleCheckAnswer();
+                        }}
+                        disabled={isBusy}
+                        placeholder="Đáp án..."
+                        className="input-glow flex-1 min-w-0 text-xl font-extrabold text-center border-4 border-indigo-200 rounded-2xl py-2 px-3 focus:border-indigo-500 disabled:opacity-50 transition-all"
+                      />
+                      {part.unit && (
+                        <span className="bg-indigo-100 text-indigo-700 font-extrabold px-3 py-2 rounded-2xl text-sm whitespace-nowrap flex-shrink-0">
+                          {part.unit}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex gap-2 items-center w-full min-w-0">
+                  <input
+                    ref={inputRef}
+                    type="number"
+                    inputMode="numeric"
+                    value={answerInput}
+                    onChange={(e) => setAnswerInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    disabled={isBusy}
+                    placeholder="Nhập đáp án..."
+                    className="input-glow flex-1 min-w-0 text-2xl font-extrabold text-center border-4 border-indigo-200 rounded-2xl py-3 px-3 focus:border-indigo-500 disabled:opacity-50 transition-all"
+                  />
+                  {currentQ.unit && (
+                    <span className="bg-indigo-100 text-indigo-700 font-extrabold px-3 py-3 rounded-2xl text-lg whitespace-nowrap flex-shrink-0">
+                      {currentQ.unit}
+                    </span>
+                  )}
+                  <button
+                    onClick={handleCheckAnswer}
+                    disabled={!answerInput.trim() || isBusy}
+                    className="btn-scale flex-shrink-0 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white font-extrabold text-xl px-4 rounded-2xl py-3 shadow-md"
+                  >
+                    ✓
+                  </button>
+                </div>
+              )
             )}
 
             {skipping && (
@@ -620,7 +820,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
           {!isCorrect && !isBusy && (
             <button
               onClick={handleCheckAnswer}
-              disabled={!answerInput.trim()}
+              disabled={!allInputsFilled}
               className="btn-scale w-full max-w-md py-5 rounded-3xl bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 disabled:opacity-40 text-white font-extrabold text-2xl shadow-xl border border-indigo-400"
             >
               Kiểm tra ✅

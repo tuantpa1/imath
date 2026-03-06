@@ -1,7 +1,12 @@
 @import "tailwindcss";
 
 * {
+  box-sizing: border-box;
   font-family: 'Baloo 2', system-ui, sans-serif;
+}
+
+body {
+  overflow-x: hidden;
 }
 
 #root {

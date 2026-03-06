@@ -1,19 +1,38 @@
 import { useState, useRef, useEffect } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
+interface AnswerPart {
+  label: string;
+  answer: number;
+  unit: string;
+}
+
 interface GeneratedQuestion {
   question: string;
-  answer: number;
+  answer?: number;
+  answers?: AnswerPart[];
+  order_matters?: boolean;
   type: string;
   difficulty: string;
   unit?: string;
 }
 
+interface WrongQuestionPart {
+  label: string;
+  correctAnswer: number;
+  studentAnswer: number;
+  unit: string;
+}
+
 interface WrongQuestion {
   question: string;
-  correctAnswer: string;
-  studentAnswer: string;
+  type?: string;
   date: string;
+  // single answer (old format, backward-compatible)
+  correctAnswer?: string;
+  studentAnswer?: string;
+  // multi answer
+  parts?: WrongQuestionPart[];
 }
 
 interface ScoresData {
@@ -31,7 +50,7 @@ interface ParentModeProps {
 }
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
-const API = 'http://localhost:3001/api';
+const API = `${window.location.protocol}//${window.location.hostname}:3001/api`;
 
 function today() {
   return new Date().toISOString().split('T')[0];
@@ -103,7 +122,9 @@ function SuccessView({
                 <p className="text-xs text-gray-400 mt-1">
                   Đáp án:{' '}
                   <span className="font-extrabold text-purple-600">
-                    {q.answer}{q.unit ? ` ${q.unit}` : ''}
+                    {q.type === 'multi_answer' && q.answers
+                      ? q.answers.map(a => `${a.label}: ${a.answer}${a.unit ? ' ' + a.unit : ''}`).join(' | ')
+                      : `${q.answer}${q.unit ? ` ${q.unit}` : ''}`}
                   </span>
                 </p>
               </div>
@@ -308,14 +329,30 @@ function ScoresView({ onBack }: { onBack: () => void }) {
                   {grouped[date].map((q, i) => (
                     <li key={i} className="px-5 py-3 hover:bg-gray-50 transition-colors">
                       <p className="font-bold text-gray-800 text-sm mb-1.5 leading-snug">{q.question}</p>
-                      <div className="flex flex-wrap gap-3 text-xs font-semibold">
-                        <span className="bg-green-50 text-green-600 px-2 py-0.5 rounded-full border border-green-200">
-                          ✓ Đúng: {q.correctAnswer}
-                        </span>
-                        <span className="bg-rose-50 text-rose-500 px-2 py-0.5 rounded-full border border-rose-200">
-                          ✗ Bé trả lời: {q.studentAnswer}
-                        </span>
-                      </div>
+                      {q.parts ? (
+                        <div className="flex flex-col gap-1.5">
+                          {q.parts.map((part, pi) => (
+                            <div key={pi} className="flex flex-wrap gap-2 items-center text-xs font-semibold">
+                              <span className="text-gray-500 font-bold min-w-fit">{part.label}:</span>
+                              <span className="bg-green-50 text-green-600 px-2 py-0.5 rounded-full border border-green-200">
+                                ✓ Đúng: {part.correctAnswer}{part.unit ? ` ${part.unit}` : ''}
+                              </span>
+                              <span className="bg-rose-50 text-rose-500 px-2 py-0.5 rounded-full border border-rose-200">
+                                ✗ Bé trả lời: {part.studentAnswer}{part.unit ? ` ${part.unit}` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-3 text-xs font-semibold">
+                          <span className="bg-green-50 text-green-600 px-2 py-0.5 rounded-full border border-green-200">
+                            ✓ Đúng: {q.correctAnswer}
+                          </span>
+                          <span className="bg-rose-50 text-rose-500 px-2 py-0.5 rounded-full border border-rose-200">
+                            ✗ Bé trả lời: {q.studentAnswer}
+                          </span>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>

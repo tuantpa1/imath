@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { generateExercises, generateSkip, ValidMime } from '../services/claudeService';
-import { readExercises, writeExercises } from '../services/storageService';
+import { readExercises, writeExercises, Question } from '../services/storageService';
 
 const router = Router();
 
@@ -62,14 +62,18 @@ router.post('/generate-exercises', upload.array('images', 10), async (req: Reque
       id: sessionId,
       createdAt: today,
       imagePaths,
-      questions: questions.map((q, i) => ({
-        id: `${sessionId}_q${i + 1}`,
-        question: q.question,
-        answer: q.answer,
-        type: q.type,
-        difficulty: q.difficulty,
-        unit: q.unit ?? '',
-      })),
+      questions: questions.map((q, i): Question => {
+        const common = {
+          id: `${sessionId}_q${i + 1}`,
+          question: q.question,
+          difficulty: q.difficulty,
+          unit: q.unit ?? '',
+        };
+        if (q.answers) {
+          return { ...common, type: 'multi_answer', order_matters: q.order_matters ?? true, answers: q.answers };
+        }
+        return { ...common, type: q.type, answer: q.answer ?? 0 };
+      }),
     };
 
     exercises.sessions.push(newSession);
@@ -84,17 +88,28 @@ router.post('/generate-exercises', upload.array('images', 10), async (req: Reque
 });
 
 router.post('/generate-skip', async (req: Request, res: Response) => {
-  const { originalQuestion, type, difficulty } = req.body as {
-    originalQuestion?: string;
-    type?: string;
-    difficulty?: string;
-  };
+  const { originalQuestion, type, difficulty, isMultiAnswer, orderMatters, answersCount } =
+    req.body as {
+      originalQuestion?: string;
+      type?: string;
+      difficulty?: string;
+      isMultiAnswer?: boolean;
+      orderMatters?: boolean;
+      answersCount?: number;
+    };
   if (!originalQuestion || !type) {
     res.status(400).json({ error: 'originalQuestion and type are required' });
     return;
   }
   try {
-    const question = await generateSkip(originalQuestion, type, difficulty ?? 'easy');
+    const question = await generateSkip(
+      originalQuestion,
+      type,
+      difficulty ?? 'easy',
+      isMultiAnswer ?? false,
+      orderMatters ?? true,
+      answersCount ?? 2
+    );
     res.json({ ok: true, question });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -142,14 +157,18 @@ router.post('/generate-extra', async (req: Request, res: Response) => {
       createdAt: today,
       imagePaths,
       isExtra: true,
-      questions: questions.map((q, i) => ({
-        id: `${sessionId}_q${i + 1}`,
-        question: q.question,
-        answer: q.answer,
-        type: q.type,
-        difficulty: q.difficulty,
-        unit: q.unit ?? '',
-      })),
+      questions: questions.map((q, i): Question => {
+        const common = {
+          id: `${sessionId}_q${i + 1}`,
+          question: q.question,
+          difficulty: q.difficulty,
+          unit: q.unit ?? '',
+        };
+        if (q.answers) {
+          return { ...common, type: 'multi_answer', order_matters: q.order_matters ?? true, answers: q.answers };
+        }
+        return { ...common, type: q.type, answer: q.answer ?? 0 };
+      }),
     };
 
     exercises.sessions.push(newSession);

@@ -37,14 +37,32 @@ export interface Scores {
   wrongQuestions: WrongQuestion[];
 }
 
-export interface Question {
+export interface AnswerPart {
+  label: string;
+  answer: number;
+  unit: string;
+}
+
+export interface SingleAnswerQuestion {
   id: string;
   question: string;
-  answer: number;
   type: string;
-  difficulty?: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  answer: number;
+  unit: string;
+}
+
+export interface MultiAnswerQuestion {
+  id: string;
+  question: string;
+  type: 'multi_answer';
+  difficulty: 'easy' | 'medium' | 'hard';
+  order_matters: boolean;
+  answers: AnswerPart[];
   unit?: string;
 }
+
+export type Question = SingleAnswerQuestion | MultiAnswerQuestion;
 
 export interface Session {
   id: string;
