@@ -1,6 +1,14 @@
 import { authService, dispatchUnauthorized } from './authService';
 
-const BASE = `${window.location.protocol}//${window.location.hostname}:3001`;
+const BASE = (() => {
+  const { protocol, hostname, port } = window.location;
+  // On standard HTTPS (443) or HTTP (80), omit the port (production/VPS)
+  if (!port || port === '443' || port === '80') {
+    return `${protocol}//${hostname}`;
+  }
+  // In local dev the backend runs on :3001 regardless of frontend port
+  return `${protocol}//${hostname}:3001`;
+})();
 
 // ── Typed error class ──────────────────────────────────────────────────────────
 export class ApiError extends Error {
