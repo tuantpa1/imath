@@ -430,7 +430,7 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
   const [errorMsg, setErrorMsg] = useState('');
   const [sizeWarning, setSizeWarning] = useState('');
   const [isDragging, setIsDragging] = useState(false);
-  const [questionCount, setQuestionCount] = useState(10);
+  const [questionCountStr, setQuestionCountStr] = useState('10');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Child selection
@@ -513,7 +513,7 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
     try {
       const formData = new FormData();
       files.forEach((f) => formData.append('images', f));
-      formData.append('count', String(questionCount));
+      formData.append('count', String(parseInt(questionCountStr, 10) || 10));
 
       const genData = await api.post<{ questions: GeneratedQuestion[] }>(
         `/api/generate-exercises?studentId=${selectedChildId}`,
@@ -704,25 +704,19 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
             <div className="bg-white rounded-2xl shadow-lg p-4 flex items-center justify-between gap-4 border border-purple-100">
               <label className="font-extrabold text-gray-700 text-sm">Số câu hỏi:</label>
               <input
-                type="number"
+                type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
-                min={5}
-                max={30}
-                value={questionCount}
+                value={questionCountStr}
                 onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  if (!isNaN(val) && val >= 5 && val <= 30) {
-                    setQuestionCount(val);
-                  } else if (e.target.value === '') {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    setQuestionCount('' as any);
-                  }
+                  const raw = e.target.value.replace(/[^0-9]/g, '');
+                  setQuestionCountStr(raw);
                 }}
-                onBlur={(e) => {
-                  const val = parseInt(e.target.value, 10);
-                  if (isNaN(val) || val < 5) setQuestionCount(5);
-                  else if (val > 30) setQuestionCount(30);
+                onBlur={() => {
+                  const val = parseInt(questionCountStr, 10);
+                  if (isNaN(val) || val < 5) setQuestionCountStr('5');
+                  else if (val > 30) setQuestionCountStr('30');
+                  else setQuestionCountStr(String(val));
                 }}
                 className="input-glow w-20 text-center text-lg font-extrabold border-2 border-purple-200 rounded-xl py-1 focus:border-purple-500 transition-all"
               />
