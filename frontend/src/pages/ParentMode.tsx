@@ -705,12 +705,25 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
               <label className="font-extrabold text-gray-700 text-sm">Số câu hỏi:</label>
               <input
                 type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 min={5}
                 max={30}
                 value={questionCount}
-                onChange={(e) =>
-                  setQuestionCount(Math.min(30, Math.max(5, parseInt(e.target.value, 10) || 10)))
-                }
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val >= 5 && val <= 30) {
+                    setQuestionCount(val);
+                  } else if (e.target.value === '') {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    setQuestionCount('' as any);
+                  }
+                }}
+                onBlur={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (isNaN(val) || val < 5) setQuestionCount(5);
+                  else if (val > 30) setQuestionCount(30);
+                }}
                 className="input-glow w-20 text-center text-lg font-extrabold border-2 border-purple-200 rounded-xl py-1 focus:border-purple-500 transition-all"
               />
               <span className="text-gray-400 text-xs font-semibold">(5–30 câu)</span>
