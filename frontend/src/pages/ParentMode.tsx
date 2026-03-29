@@ -17,6 +17,7 @@ interface AnswerPart {
 interface GeneratedQuestion {
   question: string;
   answer?: number;
+  answer_text?: string;
   answers?: AnswerPart[];
   order_matters?: boolean;
   type: string;
@@ -172,7 +173,9 @@ function SuccessView({
                   <span className="font-extrabold text-purple-600">
                     {q.type === 'multi_answer' && q.answers
                       ? q.answers.map(a => `${a.label}: ${a.answer}${a.unit ? ' ' + a.unit : ''}`).join(' | ')
-                      : `${q.answer}${q.unit ? ` ${q.unit}` : ''}`}
+                      : q.type === 'fraction'
+                      ? (q.answer_text || 'N/A')
+                      : `${q.answer ?? ''}${q.unit ? ` ${q.unit}` : ''}`}
                   </span>
                 </p>
               </div>
