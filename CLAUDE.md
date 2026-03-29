@@ -10,7 +10,7 @@ Parents upload textbook photos → Claude AI generates exercises → Children co
 ## Tech Stack
 - **Frontend:** React + TypeScript (port 3000)
 - **Backend:** Node.js + Express + TypeScript (port 3001)
-- **AI:** Claude API (`claude-sonnet-4-20250514`) with vision for image reading
+- **AI:** Claude (`claude-sonnet-4-20250514`) or Gemini 2.0 Flash — switched via `AI_MODEL` env var
 - **Storage:** SQLite (`data/imath.db`) via `better-sqlite3` — JSON files retired to `*.backup`
 - **Auth:** JWT (jsonwebtoken) + bcrypt, stored in localStorage
 - **Language:** UI in Vietnamese, code in English
@@ -55,7 +55,9 @@ imath/
 │       │   └── teacherRoutes.ts      # /teacher/* — students, parents, scores, leaderboard, usage, quotas
 │       ├── services/
 │       │   ├── authService.ts        # hashPassword, verifyToken, TokenPayload type
-│       │   ├── claudeService.ts      # Claude API integration + mergeRelatedQuestions; returns GenerateResult/SkipResult with usage
+│       │   ├── claudeService.ts      # Claude API integration + mergeRelatedQuestionsExport; returns GenerateResult/SkipResult
+│       │   ├── geminiService.ts      # Gemini 2.0 Flash integration — same interface as claudeService
+│       │   ├── aiService.ts          # Router: reads AI_MODEL env var, delegates to claude or gemini
 │       │   ├── rateLimitService.ts   # checkAndIncrement (transactional), getUsage, getAllUsageToday
 │       │   ├── storageServiceSQLite.ts  # all DB reads/writes, Question union type
 │       │   └── tokenQuotaService.ts  # token quota per parent: getGroupParentId, checkQuota, deductTokens, topUpTokens, setQuota
@@ -235,7 +237,8 @@ cd backend && npx tsc
 - See `NETWORK_SETUP.md` for the Vietnamese setup guide
 
 ## Constraints
-- Use `claude-sonnet-4-20250514` for all Claude API calls
+- AI model selected via `AI_MODEL` env var: `claude` (default) → `claude-sonnet-4-20250514`; `gemini` → `gemini-2.0-flash`
+- To switch model on VPS: edit `.env` then `pm2 restart imath-backend --update-env`
 - SQLite only — no external databases, no Redis
 - Allowed UI libraries: Tailwind CSS, canvas-confetti, Google Fonts (Baloo 2)
 

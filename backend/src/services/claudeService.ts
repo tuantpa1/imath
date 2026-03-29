@@ -72,6 +72,10 @@ function cleanQuestionText(text: string): string {
     .trim();
 }
 
+export function mergeRelatedQuestionsExport(questions: GeneratedQuestion[]): GeneratedQuestion[] {
+  return mergeRelatedQuestions(questions);
+}
+
 function mergeRelatedQuestions(questions: GeneratedQuestion[]): GeneratedQuestion[] {
   const result: GeneratedQuestion[] = [];
   let i = 0;

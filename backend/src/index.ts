@@ -31,6 +31,7 @@ app.use('/parent', authMiddleware, parentRoutes);
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`iMath backend running on http://0.0.0.0:${PORT}`);
+  console.log(`[AI] Active model: ${process.env.AI_MODEL || 'claude'}`);
 });
 
 server.on('error', (err: NodeJS.ErrnoException) => {
