@@ -1,6 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
+import { api, ApiError } from '../services/apiService';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
+interface Child {
+  id: number;
+  username: string;
+  display_name: string;
+}
+
 interface AnswerPart {
   label: string;
   answer: number;
@@ -50,29 +57,70 @@ interface ParentModeProps {
 }
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
-const API = `${window.location.protocol}//${window.location.hostname}:3001/api`;
 
 function today() {
   return new Date().toISOString().split('T')[0];
 }
 
-// ── Shared header ──────────────────────────────────────────────────────────────
-function Header({ onExitToStudent }: { onExitToStudent: () => void }) {
+// ── Child selector ─────────────────────────────────────────────────────────────
+function ChildSelector({
+  children,
+  selectedId,
+  onChange,
+}: {
+  children: Child[];
+  selectedId: number | null;
+  onChange: (id: number) => void;
+}) {
+  if (children.length <= 1) return null;
   return (
-    <header className="flex items-center justify-between px-5 py-4">
-      <div className="flex items-center gap-2">
-        <span className="text-3xl">👨‍👩‍👧</span>
-        <div>
-          <h1 className="text-xl font-extrabold text-white drop-shadow-md leading-tight">iMath</h1>
-          <p className="text-purple-100 text-[11px] font-semibold">Chế Độ Ba/Mẹ</p>
-        </div>
-      </div>
-      <button
-        onClick={onExitToStudent}
-        className="btn-scale flex items-center gap-1.5 bg-white/25 hover:bg-white/40 text-white font-bold px-3 py-1.5 rounded-2xl text-sm backdrop-blur-sm border border-white/30 shadow"
+    <div className="flex items-center gap-2 bg-white/20 backdrop-blur-sm rounded-2xl px-4 py-2 border border-white/30">
+      <span className="text-white font-bold text-sm shrink-0">👦 Bé:</span>
+      <select
+        value={selectedId ?? ''}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="flex-1 bg-transparent text-white font-bold text-sm focus:outline-none cursor-pointer"
       >
-        🏠 Về trang học
-      </button>
+        {children.map((c) => (
+          <option key={c.id} value={c.id} className="text-gray-800">
+            {c.display_name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+// ── Shared header ──────────────────────────────────────────────────────────────
+function Header({
+  onExitToStudent,
+  children,
+  selectedChildId,
+  onChildChange,
+}: {
+  onExitToStudent: () => void;
+  children: Child[];
+  selectedChildId: number | null;
+  onChildChange: (id: number) => void;
+}) {
+  return (
+    <header className="flex flex-col gap-2 px-5 py-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-3xl">👨‍👩‍👧</span>
+          <div>
+            <h1 className="text-xl font-extrabold text-white drop-shadow-md leading-tight">iMath</h1>
+            <p className="text-purple-100 text-[11px] font-semibold">Chế Độ Ba/Mẹ</p>
+          </div>
+        </div>
+        <button
+          onClick={onExitToStudent}
+          className="btn-scale flex items-center gap-1.5 bg-white/25 hover:bg-white/40 text-white font-bold px-3 py-1.5 rounded-2xl text-sm backdrop-blur-sm border border-white/30 shadow"
+        >
+          🏠 Về trang học
+        </button>
+      </div>
+      <ChildSelector children={children} selectedId={selectedChildId} onChange={onChildChange} />
     </header>
   );
 }
@@ -153,7 +201,7 @@ function SuccessView({
 }
 
 // ── Scores view ───────────────────────────────────────────────────────────────
-function ScoresView({ onBack }: { onBack: () => void }) {
+function ScoresView({ onBack, studentId }: { onBack: () => void; studentId: number }) {
   const [scoresData, setScoresData] = useState<ScoresData | null>(null);
   const [loading, setLoading] = useState(true);
   const [redeemInput, setRedeemInput] = useState('');
@@ -162,25 +210,21 @@ function ScoresView({ onBack }: { onBack: () => void }) {
   const [redeeming, setRedeeming] = useState(false);
 
   useEffect(() => {
-    fetch(`${API}/scores`)
-      .then((r) => r.json())
-      .then((data: ScoresData) => {
+    setLoading(true);
+    api.get<ScoresData>(`/api/scores?studentId=${studentId}`)
+      .then((data) => {
         if (!data.wrongQuestions) data.wrongQuestions = [];
         if (!data.redeemed) data.redeemed = [];
         setScoresData(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [studentId]);
 
   const clearWrong = async () => {
     if (!scoresData) return;
     const updated = { ...scoresData, wrongQuestions: [] };
-    await fetch(`${API}/scores`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    }).catch(() => {});
+    await api.post(`/api/scores?studentId=${studentId}`, updated).catch(() => {});
     setScoresData(updated);
   };
 
@@ -195,18 +239,19 @@ function ScoresView({ onBack }: { onBack: () => void }) {
     }
     setRedeemWarning('');
     setRedeeming(true);
-    const updated: ScoresData = {
-      ...scoresData,
-      totalPoints: scoresData.totalPoints - pts,
-      redeemed: [{ date: today(), points: pts, amount: 0 }, ...scoresData.redeemed],
-    };
-    await fetch(`${API}/scores`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated),
-    }).catch(() => {});
-    setScoresData(updated);
-    setRedeemMsg(`Đã đổi ${pts} điểm thành công! 🎉`);
+
+    try {
+      await api.post(`/parent/children/${studentId}/redeem`, { points: pts });
+      const updated: ScoresData = {
+        ...scoresData,
+        totalPoints: scoresData.totalPoints - pts,
+        redeemed: [{ date: today(), points: pts, amount: 0 }, ...scoresData.redeemed],
+      };
+      setScoresData(updated);
+      setRedeemMsg(`Đã đổi ${pts} điểm thành công! 🎉`);
+    } catch (err) {
+      setRedeemWarning(err instanceof ApiError ? err.message : 'Đổi điểm thất bại, vui lòng thử lại.');
+    }
     setRedeemInput('');
     setRedeeming(false);
   };
@@ -385,6 +430,30 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
   const [questionCount, setQuestionCount] = useState(10);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Child selection
+  const [childList, setChildList] = useState<Child[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
+  const [genUsage, setGenUsage] = useState<{ used: number; limit: number; remaining: number } | null>(null);
+  const [tokenQuota, setTokenQuota] = useState<{
+    total_tokens: number; used_tokens: number; remaining: number; unlimited: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    api.get<Child[]>('/parent/children')
+      .then((data) => {
+        setChildList(data);
+        if (data.length > 0) setSelectedChildId(data[0].id);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.get<{ generate_exercises: { used: number; limit: number; remaining: number } }>('/api/usage')
+      .then((data) => setGenUsage(data.generate_exercises))
+      .catch(() => {});
+    api.get('/parent/quota').then((data) => setTokenQuota(data as typeof tokenQuota)).catch(() => {});
+  }, []);
+
   const applyFiles = (newFiles: File[]) => {
     const valid: File[] = [];
     let warning = '';
@@ -435,7 +504,7 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
   };
 
   const handleGenerate = async () => {
-    if (files.length === 0) return;
+    if (files.length === 0 || selectedChildId === null) return;
     setUploadState('loading');
     setErrorMsg('');
     try {
@@ -443,57 +512,78 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
       files.forEach((f) => formData.append('images', f));
       formData.append('count', String(questionCount));
 
-      const genRes = await fetch(`${API}/generate-exercises`, { method: 'POST', body: formData });
-      if (!genRes.ok) {
-        const err = await genRes.json().catch(() => ({}));
-        throw new Error((err as any).error ?? 'Lỗi máy chủ');
-      }
-
-      const genData = await genRes.json();
+      const genData = await api.post<{ questions: GeneratedQuestion[] }>(
+        `/api/generate-exercises?studentId=${selectedChildId}`,
+        formData
+      );
       const rawQuestions: GeneratedQuestion[] = genData.questions ?? [];
       if (rawQuestions.length === 0) throw new Error('Không thể tạo bài tập, vui lòng thử lại.');
 
       setQuestions(rawQuestions);
       setUploadState('success');
+      setGenUsage((prev) => prev ? { ...prev, used: prev.used + 1, remaining: prev.remaining - 1 } : prev);
+      api.get('/parent/quota').then((data) => setTokenQuota(data as typeof tokenQuota)).catch(() => {});
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Đã xảy ra lỗi, vui lòng thử lại.');
+      const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : 'Đã xảy ra lỗi, vui lòng thử lại.');
+      setErrorMsg(msg);
       setUploadState('error');
     }
   };
 
   const bgClass = 'min-h-screen bg-gradient-to-b from-purple-500 via-violet-400 to-indigo-400 flex flex-col';
 
+  const noChildrenMsg = childList.length === 0 && (
+    <div className="animate-fade-in bg-white/20 backdrop-blur-sm rounded-3xl p-6 text-center border border-white/30">
+      <p className="text-white font-extrabold text-lg">⚠️ Chưa có học sinh nào được liên kết</p>
+      <p className="text-white/80 text-sm mt-1">Liên hệ giáo viên để thêm học sinh vào tài khoản.</p>
+    </div>
+  );
+
   // ── Dashboard view ───────────────────────────────────────────────────────────
   if (view === 'dashboard') {
     return (
       <div className={bgClass}>
-        <Header onExitToStudent={onExitToStudent} />
+        <Header
+          onExitToStudent={onExitToStudent}
+          children={childList}
+          selectedChildId={selectedChildId}
+          onChildChange={setSelectedChildId}
+        />
         <main className="flex-1 flex flex-col items-center justify-center px-5 pb-10 gap-5">
-          <div className="animate-fade-in bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md text-center border border-purple-100">
-            <div className="text-6xl mb-4">🎓</div>
-            <h2 className="text-2xl font-extrabold text-purple-700 mb-2">Chào Ba/Mẹ!</h2>
-            <p className="text-gray-500 font-semibold text-sm">
-              Quản lý bài tập cho bé tại đây. 📚
-            </p>
-          </div>
+          {noChildrenMsg || (
+            <>
+              <div className="animate-fade-in bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md text-center border border-purple-100">
+                <div className="text-6xl mb-4">🎓</div>
+                <h2 className="text-2xl font-extrabold text-purple-700 mb-2">Chào Ba/Mẹ!</h2>
+                <p className="text-gray-500 font-semibold text-sm">
+                  Quản lý bài tập cho bé tại đây. 📚
+                </p>
+                {childList.length > 0 && selectedChildId !== null && (
+                  <p className="text-purple-400 text-xs font-bold mt-2">
+                    Đang quản lý: {childList.find(c => c.id === selectedChildId)?.display_name}
+                  </p>
+                )}
+              </div>
 
-          <div className="w-full max-w-md flex flex-col gap-3">
-            <button
-              onClick={() => { resetUpload(); setView('upload'); }}
-              className="btn-scale w-full py-5 rounded-3xl bg-gradient-to-r from-blue-400 to-cyan-500 text-white font-extrabold text-lg shadow-xl border border-blue-300 flex items-center justify-center gap-3"
-            >
-              <span className="text-2xl">📷</span>
-              <span>Tải Ảnh Sách Giáo Khoa</span>
-            </button>
+              <div className="w-full max-w-md flex flex-col gap-3">
+                <button
+                  onClick={() => { resetUpload(); setView('upload'); }}
+                  className="btn-scale w-full py-5 rounded-3xl bg-gradient-to-r from-blue-400 to-cyan-500 text-white font-extrabold text-lg shadow-xl border border-blue-300 flex items-center justify-center gap-3"
+                >
+                  <span className="text-2xl">📷</span>
+                  <span>Tải Ảnh Sách Giáo Khoa</span>
+                </button>
 
-            <button
-              onClick={() => setView('scores')}
-              className="btn-scale w-full py-5 rounded-3xl bg-gradient-to-r from-green-400 to-teal-500 text-white font-extrabold text-lg shadow-xl border border-green-300 flex items-center justify-center gap-3"
-            >
-              <span className="text-2xl">📊</span>
-              <span>Xem Điểm Của Bé</span>
-            </button>
-          </div>
+                <button
+                  onClick={() => setView('scores')}
+                  className="btn-scale w-full py-5 rounded-3xl bg-gradient-to-r from-green-400 to-teal-500 text-white font-extrabold text-lg shadow-xl border border-green-300 flex items-center justify-center gap-3"
+                >
+                  <span className="text-2xl">📊</span>
+                  <span>Xem Điểm Của Bé</span>
+                </button>
+              </div>
+            </>
+          )}
         </main>
       </div>
     );
@@ -503,9 +593,16 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
   if (view === 'scores') {
     return (
       <div className={bgClass}>
-        <Header onExitToStudent={onExitToStudent} />
+        <Header
+          onExitToStudent={onExitToStudent}
+          children={childList}
+          selectedChildId={selectedChildId}
+          onChildChange={(id) => { setSelectedChildId(id); }}
+        />
         <main className="flex-1 flex flex-col items-center px-4 py-5 gap-4 overflow-y-auto">
-          <ScoresView onBack={() => setView('dashboard')} />
+          {selectedChildId !== null && (
+            <ScoresView onBack={() => setView('dashboard')} studentId={selectedChildId} />
+          )}
         </main>
       </div>
     );
@@ -514,7 +611,12 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
   // ── Upload view ──────────────────────────────────────────────────────────────
   return (
     <div className={bgClass}>
-      <Header onExitToStudent={onExitToStudent} />
+      <Header
+        onExitToStudent={onExitToStudent}
+        children={childList}
+        selectedChildId={selectedChildId}
+        onChildChange={setSelectedChildId}
+      />
 
       <main className="flex-1 flex flex-col items-center px-4 py-5 gap-4 overflow-y-auto">
         {uploadState === 'success' ? (
@@ -619,12 +721,34 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
               </div>
             )}
 
+            {/* Token quota indicator */}
+            {tokenQuota && !tokenQuota.unlimited && (
+              <div className={`rounded-2xl px-4 py-3 border text-sm font-semibold ${
+                tokenQuota.remaining === 0
+                  ? 'bg-rose-50 border-rose-200 text-rose-600'
+                  : tokenQuota.remaining < tokenQuota.total_tokens * 0.2
+                  ? 'bg-amber-50 border-amber-200 text-amber-700'
+                  : 'bg-violet-50 border-violet-200 text-violet-700'
+              }`}>
+                {tokenQuota.remaining === 0 ? (
+                  <p>🚫 Hết token! Liên hệ giáo viên để nạp thêm.</p>
+                ) : (
+                  <>
+                    <p>🪙 Token còn lại: <span className="font-extrabold">{tokenQuota.remaining.toLocaleString()}</span> / {tokenQuota.total_tokens.toLocaleString()}</p>
+                    {tokenQuota.remaining < tokenQuota.total_tokens * 0.2 && (
+                      <p className="mt-1">⚠️ Sắp hết token, liên hệ giáo viên!</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Generate button */}
             <button
               onClick={handleGenerate}
-              disabled={files.length === 0 || uploadState === 'loading'}
+              disabled={files.length === 0 || uploadState === 'loading' || selectedChildId === null || genUsage?.remaining === 0 || (tokenQuota?.remaining === 0 && !tokenQuota?.unlimited)}
               className={`btn-scale w-full py-5 rounded-3xl font-extrabold text-xl text-white shadow-xl transition-all border ${
-                files.length > 0 && uploadState !== 'loading'
+                files.length > 0 && uploadState !== 'loading' && selectedChildId !== null && genUsage?.remaining !== 0 && !(tokenQuota?.remaining === 0 && !tokenQuota?.unlimited)
                   ? 'bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 border-purple-400'
                   : 'bg-gray-300 cursor-not-allowed border-gray-200'
               }`}
@@ -638,6 +762,16 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
                 '✨ Tạo bài tập'
               )}
             </button>
+            {genUsage && (
+              <p className="text-center text-sm text-violet-600 font-semibold mt-2">
+                Hôm nay đã tạo: {genUsage.used}/{genUsage.limit} bài tập 📊
+              </p>
+            )}
+            {genUsage?.remaining === 0 && (
+              <p className="text-center text-sm text-rose-500 font-semibold mt-1">
+                Đã đạt giới hạn hôm nay. Thử lại vào ngày mai! 🌙
+              </p>
+            )}
 
             <button
               onClick={() => { resetUpload(); setView('dashboard'); }}

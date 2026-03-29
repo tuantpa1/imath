@@ -52,6 +52,15 @@ export interface SingleAnswerQuestion {
   unit: string;
 }
 
+export interface FractionQuestion {
+  id: string;
+  question: string;
+  type: 'fraction';
+  difficulty: 'easy' | 'medium' | 'hard';
+  answer_text: string;   // e.g. "3/5"
+  unit: string;
+}
+
 export interface MultiAnswerQuestion {
   id: string;
   question: string;
@@ -62,7 +71,7 @@ export interface MultiAnswerQuestion {
   unit?: string;
 }
 
-export type Question = SingleAnswerQuestion | MultiAnswerQuestion;
+export type Question = SingleAnswerQuestion | FractionQuestion | MultiAnswerQuestion;
 
 export interface Session {
   id: string;

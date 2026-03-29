@@ -29,3 +29,14 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# SQLite database files (runtime data)
+data/imath.db
+data/imath.db-shm
+data/imath.db-wal
+
+# Uploaded images (user content)
+data/images/
+
+# JSON backups (migrated to SQLite)
+data/*.backup

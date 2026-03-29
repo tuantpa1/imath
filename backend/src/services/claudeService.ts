@@ -18,11 +18,17 @@ export interface AnswerPart {
 export interface GeneratedQuestion {
   question: string;
   answer?: number;
+  answer_text?: string;      // fraction questions: "3/5" stored as string
   answers?: AnswerPart[];
   order_matters?: boolean;
   type: string;
   difficulty: 'easy' | 'medium' | 'hard';
   unit?: string;
+}
+
+export interface GenerateResult {
+  questions: GeneratedQuestion[];
+  usage: { input_tokens: number; output_tokens: number };
 }
 
 // ── Post-processing: merge split "find two numbers" pairs ─────────────────────
@@ -107,9 +113,6 @@ function mergeRelatedQuestions(questions: GeneratedQuestion[]): GeneratedQuestio
           ],
         };
 
-        console.log(
-          `[merge] Combined "${q.question}" + "${next.question}" → 1 multi_answer`
-        );
         result.push(merged);
         i += 2;
         continue;
@@ -129,7 +132,7 @@ export async function generateExercises(
   images: Array<{ base64: string; mimeType: ValidMime }>,
   count: number = 10,
   previousQuestions: string[] = []
-): Promise<GeneratedQuestion[]> {
+): Promise<GenerateResult> {
   const prevNote =
     previousQuestions.length > 0
       ? `\nGenerate NEW questions, different from these already seen: ${previousQuestions.slice(0, 20).join('; ')}`
@@ -138,8 +141,12 @@ export async function generateExercises(
   const userPrompt = `Look at this textbook page and generate exactly ${count} math exercises based on the content.${prevNote}
 Return ONLY a valid JSON array, nothing else. Each item uses ONE of these formats:
 
-Single answer:
+Single answer (numeric):
 { "question": "5 + 3 = ?", "answer": 8, "type": "addition", "difficulty": "easy", "unit": "" }
+
+Fraction answer (answer is a fraction string, NOT a decimal):
+{ "question": "Rút gọn phân số 15/25", "answer_text": "3/5", "type": "fraction", "difficulty": "medium", "unit": "" }
+{ "question": "Tính 1/2 + 1/4 = ?", "answer_text": "3/4", "type": "fraction", "difficulty": "medium", "unit": "" }
 
 Multi-answer ordered (e.g. perimeter AND area):
 { "question": "Tinh chu vi va dien tich hinh chu nhat...", "type": "multi_answer", "order_matters": true, "difficulty": "medium", "answers": [{ "label": "Chu vi", "answer": 26, "unit": "cm" }, { "label": "Dien tich", "answer": 40, "unit": "cm2" }] }
@@ -151,6 +158,7 @@ Multi-answer with generic labels (e.g. 2 interchangeable numbers, no bigger/smal
 { "question": "Tim 2 so co tong bang 10.", "type": "multi_answer", "order_matters": false, "difficulty": "medium", "answers": [{ "label": "So thu nhat", "answer": 5, "unit": "" }, { "label": "So thu hai", "answer": 5, "unit": "" }] }
 
 For word problems requiring multiple distinct calculations, use multi_answer. For single calculations, use single answer format.
+For fraction questions (rút gọn, tính phân số, so sánh phân số, điền phân số), use type "fraction" with "answer_text" as a string like "3/5".
 For word problems with a unit, set "unit" to the appropriate unit (e.g. "kg", "km", "cai", "m").`;
 
   const content: Anthropic.MessageParam['content'] = [
@@ -206,7 +214,15 @@ order_matters: FALSE only when labels are generic AND problem has no bigger/smal
 - Labels like "Số thứ nhất" / "Số thứ hai" with fully interchangeable values
 
 For "Tổng X, hiệu Y, tìm hai số" problems: ALWAYS order_matters: true with labels "Số lớn" and "Số bé".
-For single-answer questions, keep the existing format with the "answer" field.`;
+For single-answer questions, keep the existing format with the "answer" field.
+
+FRACTION RULE — Use type "fraction" when the answer is a fraction:
+- "Rút gọn phân số X/Y" → type: "fraction", answer_text: "a/b" (reduced form)
+- "Tính X/Y + A/B" → type: "fraction", answer_text: "result as fraction"
+- "Điền phân số thích hợp" → type: "fraction", answer_text: "a/b"
+- "Viết phân số..." → type: "fraction", answer_text: "a/b"
+- NEVER store a fraction answer as a decimal in the "answer" field
+- answer_text MUST be in the format "numerator/denominator" (e.g. "3/5", "7/8", "1/2")`;
 
   const response = await getClient().messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -221,10 +237,18 @@ For single-answer questions, keep the existing format with the "answer" field.`;
   const cleaned = raw.text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
   const questions = JSON.parse(cleaned) as GeneratedQuestion[];
 
-  return mergeRelatedQuestions(questions);
+  return {
+    questions: mergeRelatedQuestions(questions),
+    usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
+  };
 }
 
 // ── Skip question generation ──────────────────────────────────────────────────
+
+export interface SkipResult {
+  question: GeneratedQuestion;
+  usage: { input_tokens: number; output_tokens: number };
+}
 
 export async function generateSkip(
   originalQuestion: string,
@@ -233,7 +257,7 @@ export async function generateSkip(
   isMultiAnswer: boolean = false,
   orderMatters: boolean = true,
   answersCount: number = 2
-): Promise<GeneratedQuestion> {
+): Promise<SkipResult> {
   let prompt: string;
 
   if (isMultiAnswer) {
@@ -245,6 +269,10 @@ export async function generateSkip(
 Same difficulty (${difficulty}), same number of answer parts (${answersCount}), order_matters: ${orderMatters}. Vietnamese.
 Return ONLY JSON:
 { "question": "...", "type": "multi_answer", "order_matters": ${orderMatters}, "difficulty": "${difficulty}", "answers": [${answersTemplate}] }`;
+  } else if (type === 'fraction') {
+    prompt = `Generate 1 similar fraction math question to: "${originalQuestion}". Same difficulty (${difficulty}). Vietnamese.
+The answer must be a fraction string like "3/5". Return ONLY JSON:
+{ "question": "...", "answer_text": "a/b", "type": "fraction", "difficulty": "${difficulty}", "unit": "" }`;
   } else {
     prompt = `Generate 1 similar math question to: "${originalQuestion}". Same type (${type}), same difficulty (${difficulty}). Vietnamese. Return ONLY JSON:
 { "question": "...", "answer": 0, "type": "${type}", "difficulty": "${difficulty}", "unit": "" }`;
@@ -260,5 +288,8 @@ Return ONLY JSON:
   if (raw.type !== 'text') throw new Error('Unexpected response type from Claude');
 
   const cleaned = raw.text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-  return JSON.parse(cleaned) as GeneratedQuestion;
+  return {
+    question: JSON.parse(cleaned) as GeneratedQuestion,
+    usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
+  };
 }

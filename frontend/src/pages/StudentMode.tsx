@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { authService } from '../services/authService';
+import { api, ApiError } from '../services/apiService';
 import confetti from 'canvas-confetti';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -12,6 +14,7 @@ interface Question {
   id: string;
   question: string;
   answer?: number;
+  answer_text?: string;   // fraction questions: "3/5"
   answers?: AnswerPart[];
   order_matters?: boolean;
   type: string;
@@ -68,9 +71,13 @@ interface StudentModeProps {
   onSwitchToParent: () => void;
 }
 
-const API = `${window.location.protocol}//${window.location.hostname}:3001/api`;
 const POINTS_PER_QUESTION = 10;
-const STORAGE_KEY = 'imath_progress';
+
+/** Returns a localStorage key scoped to the current user. */
+function getProgressKey(): string {
+  const user = authService.getCurrentUser();
+  return user ? `imath_progress_${user.id}` : 'imath_progress';
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function today() {
@@ -79,7 +86,7 @@ function today() {
 
 function loadProgress(): SavedProgress | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getProgressKey());
     return raw ? (JSON.parse(raw) as SavedProgress) : null;
   } catch {
     return null;
@@ -87,7 +94,98 @@ function loadProgress(): SavedProgress | null {
 }
 
 function clearProgress() {
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(getProgressKey());
+}
+
+// ── Fraction helpers ───────────────────────────────────────────────────────────
+
+/** Cross-multiplication equivalence: "6/10" === "3/5" */
+function compareFractionAnswer(input: string, correct: string): boolean {
+  const parse = (s: string): { num: number; den: number } | null => {
+    const trimmed = s.trim();
+    if (!trimmed) return null;
+    if (!trimmed.includes('/')) {
+      const n = parseInt(trimmed, 10);
+      return isNaN(n) ? null : { num: n, den: 1 };
+    }
+    const parts = trimmed.split('/');
+    if (parts.length !== 2) return null;
+    const num = parseInt(parts[0], 10);
+    const den = parseInt(parts[1], 10);
+    if (isNaN(num) || isNaN(den) || den === 0) return null;
+    return { num, den };
+  };
+  const a = parse(input);
+  const b = parse(correct);
+  if (!a || !b) return false;
+  return a.num * b.den === b.num * a.den;
+}
+
+/** Render text with inline fraction notation for "X/Y" patterns (1–3 digit numbers). */
+function renderWithFractions(text: string): React.ReactNode {
+  const parts = text.split(/(\b\d{1,3}\/\d{1,3}\b)/g);
+  return parts.map((part, i) => {
+    if (/^\d{1,3}\/\d{1,3}$/.test(part)) {
+      const [num, den] = part.split('/');
+      return (
+        <span key={i} className="inline-flex flex-col items-center align-middle mx-1 leading-none">
+          <span className="border-b-2 border-indigo-600 px-1 text-center text-lg font-extrabold leading-tight">{num}</span>
+          <span className="px-1 text-center text-lg font-extrabold leading-tight">{den}</span>
+        </span>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+// ── Fraction keyboard ──────────────────────────────────────────────────────────
+
+function FractionKeyboard({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+}) {
+  const hasSlash = value.includes('/');
+
+  const handleKey = (key: string) => {
+    if (disabled) return;
+    if (key === '⌫') {
+      onChange(value.slice(0, -1));
+      return;
+    }
+    if (key === '/') {
+      if (hasSlash || !value) return; // max 1 slash; must have numerator first
+      onChange(value + '/');
+      return;
+    }
+    onChange(value + key);
+  };
+
+  const keys = ['1','2','3','4','5','6','7','8','9','/','0','⌫'];
+
+  return (
+    <div className="grid grid-cols-3 gap-2 mt-3 w-full">
+      {keys.map((k) => (
+        <button
+          key={k}
+          type="button"
+          onPointerDown={(e) => { e.preventDefault(); handleKey(k); }}
+          disabled={disabled || (k === '/' && (hasSlash || !value))}
+          className={`py-4 rounded-2xl font-extrabold text-xl shadow-md transition-all active:scale-95 select-none
+            ${k === '/' ? 'bg-violet-500 text-white disabled:opacity-30' :
+              k === '⌫' ? 'bg-rose-100 text-rose-600 border-2 border-rose-200' :
+              'bg-white text-indigo-700 border-2 border-indigo-100'}
+            disabled:opacity-40`}
+        >
+          {k}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // ── Header ─────────────────────────────────────────────────────────────────────
@@ -148,6 +246,8 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [skipsUsed, setSkipsUsed] = useState(0);
   const [skipping, setSkipping] = useState(false);
+  const [dailySkipsRemaining, setDailySkipsRemaining] = useState<number>(20);
+  const [dailySkipLimitReached, setDailySkipLimitReached] = useState(false);
   const [extraLoading, setExtraLoading] = useState(false);
   const [floatPts, setFloatPts] = useState<{ id: number; pts: number; positive: boolean } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -176,7 +276,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
         totalDone,
         correctCount,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(getProgressKey(), JSON.stringify(data));
     }
   }, [queue, sessionPoints, totalDone, correctCount, view, session]);
 
@@ -185,15 +285,22 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     loadHomeData();
   }, []);
 
+  useEffect(() => {
+    api.get<{ skip_question: { remaining: number } }>('/api/usage')
+      .then((data) => {
+        setDailySkipsRemaining(data.skip_question.remaining);
+        if (data.skip_question.remaining <= 0) setDailySkipLimitReached(true);
+      })
+      .catch(() => {});
+  }, []);
+
   async function loadHomeData() {
     setLoading(true);
     try {
-      const [scoresRes, exRes] = await Promise.all([
-        fetch(`${API}/scores`),
-        fetch(`${API}/exercises`),
+      const [scoresData, exData] = await Promise.all([
+        api.get<Scores>('/api/scores'),
+        api.get<{ sessions: Session[] }>('/api/exercises'),
       ]);
-      const scoresData: Scores = await scoresRes.json();
-      const exData: { sessions: Session[] } = await exRes.json();
 
       if (!scoresData.wrongQuestions) scoresData.wrongQuestions = [];
       setScores(scoresData);
@@ -262,17 +369,12 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     if (session.imagePaths && session.imagePaths.length > 0) {
       setExtraLoading(true);
       try {
-        const res = await fetch(`${API}/generate-extra`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imagePaths: session.imagePaths,
-            previousQuestions: session.questions.map((q) => q.question),
-            count: 10,
-          }),
+        const data = await api.post<{ session: Session }>('/api/generate-extra', {
+          imagePaths: session.imagePaths,
+          previousQuestions: session.questions.map((q) => q.question),
+          count: 10,
         });
-        if (res.ok) {
-          const data = await res.json();
+        {
           const newSession: Session = data.session;
           setSession(newSession);
           clearProgress();
@@ -296,24 +398,20 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     setSkipping(true);
     try {
       const isMultiAnswer = Array.isArray(currentQ.answers) && (currentQ.answers?.length ?? 0) > 0;
-      const res = await fetch(`${API}/generate-skip`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          originalQuestion: currentQ.question,
-          type: currentQ.type,
-          difficulty: currentQ.difficulty ?? 'easy',
-          isMultiAnswer,
-          orderMatters: currentQ.order_matters ?? true,
-          answersCount: currentQ.answers?.length ?? 2,
-        }),
+      const data = await api.post<{ question: Question }>('/api/generate-skip', {
+        originalQuestion: currentQ.question,
+        type: currentQ.type,
+        difficulty: currentQ.difficulty ?? 'easy',
+        isMultiAnswer,
+        orderMatters: currentQ.order_matters ?? true,
+        answersCount: currentQ.answers?.length ?? 2,
       });
-      if (res.ok) {
-        const data = await res.json();
+      {
         const newQ: Question = {
           id: `skip_${Date.now()}`,
           question: data.question.question,
           answer: data.question.answer,
+          answer_text: data.question.answer_text,
           answers: data.question.answers,
           order_matters: data.question.order_matters,
           type: data.question.type,
@@ -327,8 +425,17 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
         setMultiInputs([]);
         setTimeout(() => inputRef.current?.focus(), 100);
       }
-    } catch {
-      // ignore
+      setDailySkipsRemaining((n) => {
+        const next = n - 1;
+        if (next <= 0) setDailySkipLimitReached(true);
+        return next;
+      });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setDailySkipLimitReached(true);
+        setDailySkipsRemaining(0);
+      }
+      // ignore other errors
     } finally {
       setSkipping(false);
     }
@@ -338,6 +445,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
   async function handleCheckAnswer() {
     if (!currentQ || answerState !== 'idle') return;
 
+    const isFraction = currentQ.type === 'fraction';
     const isMulti = Array.isArray(currentQ.answers) && (currentQ.answers?.length ?? 0) > 0;
 
     if (isMulti) {
@@ -374,11 +482,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
           wrongQuestions: scores.wrongQuestions,
         };
         setScores(newScores);
-        await fetch(`${API}/scores`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newScores),
-        }).catch(() => {});
+        await api.post('/api/scores', newScores).catch(() => {});
 
         setTimeout(() => advanceQueue(), 1500);
       } else {
@@ -441,13 +545,66 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
           wrongQuestions: [...scores.wrongQuestions, ...newWrongEntries],
         };
         setScores(newScores);
-        await fetch(`${API}/scores`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newScores),
-        }).catch(() => {});
+        await api.post('/api/scores', newScores).catch(() => {});
 
         setTimeout(() => advanceQueue(), 2500);
+      }
+    } else if (isFraction) {
+      // ── Fraction answer ───────────────────────────────────────────────────────
+      const input = answerInput.trim();
+      if (!input) return;
+      // Validate: must be "a/b" or just "a"
+      const isValid = /^\d+$/.test(input) || /^\d+\/\d+$/.test(input);
+      if (!isValid) {
+        setFeedbackMsg('Đáp án không hợp lệ! Nhập dạng a/b (ví dụ: 3/5)');
+        setAnswerState('wrong');
+        setTimeout(() => advanceQueue(), 2000);
+        return;
+      }
+      const correct = currentQ.answer_text ?? '';
+      if (compareFractionAnswer(input, correct)) {
+        const newPoints = sessionPoints + POINTS_PER_QUESTION;
+        setSessionPoints(newPoints);
+        setCorrectCount((c) => c + 1);
+        setAnswerState('correct');
+        setFeedbackMsg('Đúng rồi! Giỏi lắm! 🎉');
+        setFloatPts({ id: Date.now(), pts: POINTS_PER_QUESTION, positive: true });
+        setTimeout(() => setFloatPts(null), 1200);
+
+        const newScores: Scores = {
+          totalPoints: scores.totalPoints + POINTS_PER_QUESTION,
+          history: [...scores.history, { date: today(), earned: POINTS_PER_QUESTION, activity: 'exercise session' }],
+          redeemed: scores.redeemed,
+          wrongQuestions: scores.wrongQuestions,
+        };
+        setScores(newScores);
+        await api.post('/api/scores', newScores).catch(() => {});
+        setTimeout(() => advanceQueue(), 1500);
+      } else {
+        setAnswerState('wrong');
+        setFeedbackMsg(`Đáp án đúng là: ${correct}`);
+        setFloatPts({ id: Date.now(), pts: 5, positive: false });
+        setTimeout(() => setFloatPts(null), 1200);
+
+        const newTotal = Math.max(0, scores.totalPoints - 5);
+        setSessionPoints(Math.max(0, sessionPoints - 5));
+
+        const wrongEntry: WrongQuestion = {
+          question: currentQ.question,
+          type: 'fraction',
+          correctAnswer: correct,
+          studentAnswer: input,
+          date: today(),
+        };
+        const newScores: Scores = {
+          totalPoints: newTotal,
+          history: scores.history,
+          redeemed: scores.redeemed,
+          wrongQuestions: [...scores.wrongQuestions, wrongEntry],
+        };
+        setScores(newScores);
+        await api.post('/api/scores', newScores).catch(() => {});
+        setTimeout(() => advanceQueue(), 2000);
       }
     } else {
       // ── Single-answer (existing logic) ────────────────────────────────────────
@@ -476,11 +633,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
           wrongQuestions: scores.wrongQuestions,
         };
         setScores(newScores);
-        await fetch(`${API}/scores`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newScores),
-        }).catch(() => {});
+        await api.post('/api/scores', newScores).catch(() => {});
 
         setTimeout(() => advanceQueue(), 1500);
       } else {
@@ -507,11 +660,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
           wrongQuestions: [...scores.wrongQuestions, wrongEntry],
         };
         setScores(newScores);
-        await fetch(`${API}/scores`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newScores),
-        }).catch(() => {});
+        await api.post('/api/scores', newScores).catch(() => {});
 
         setTimeout(() => advanceQueue(), 2000);
       }
@@ -523,7 +672,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
       const remaining = prev.slice(1);
       if (remaining.length === 0) {
         if (session) {
-          fetch(`${API}/sessions/${session.id}/complete`, { method: 'PATCH' }).catch(() => {});
+          api.patch(`/api/sessions/${session.id}/complete`).catch(() => {});
           setSession((s) => (s ? { ...s, completed: true } : s));
         }
         setView('complete');
@@ -652,6 +801,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     const isBusy = isCorrect || isWrong || skipping;
     const skipsLeft = 2 - skipsUsed;
     const isMultiAnswer = Array.isArray(currentQ.answers) && (currentQ.answers?.length ?? 0) > 0;
+    const isFractionQ = currentQ.type === 'fraction';
     const allInputsFilled = isMultiAnswer
       ? multiInputs.length === currentQ.answers!.length &&
         multiInputs.every((v) => v.trim() !== '')
@@ -713,12 +863,14 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
             }`}
           >
             <p className="text-gray-400 text-xs font-bold mb-3 uppercase tracking-widest">
-              {currentQ.type === 'word_problem' || currentQ.type === 'multi_answer'
+              {currentQ.type === 'fraction'
+                ? '🔢 Phân số'
+                : currentQ.type === 'word_problem' || currentQ.type === 'multi_answer'
                 ? '📝 Bài toán'
                 : '🧮 Tính'}
             </p>
             <p className="text-2xl font-extrabold text-indigo-700 leading-relaxed mb-5">
-              {currentQ.question}
+              {renderWithFractions(currentQ.question)}
             </p>
 
             {/* Feedback */}
@@ -780,6 +932,26 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
                     </div>
                   ))}
                 </div>
+              ) : isFractionQ ? (
+                /* ── Fraction input with custom keyboard (Step 3) ── */
+                <div className="flex flex-col items-center w-full mt-2">
+                  {/* Display area — read-only, shows typed value */}
+                  <div className="w-full border-4 border-violet-300 rounded-2xl py-3 px-4 bg-violet-50 min-h-[56px] flex items-center justify-center gap-1">
+                    {answerInput ? (
+                      <span className="text-2xl font-extrabold text-violet-700">
+                        {renderWithFractions(answerInput)}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300 text-lg font-semibold">Nhập phân số...</span>
+                    )}
+                  </div>
+                  {/* Custom keyboard */}
+                  <FractionKeyboard
+                    value={answerInput}
+                    onChange={(v) => !isBusy && setAnswerInput(v)}
+                    disabled={isBusy}
+                  />
+                </div>
               ) : (
                 <div className="flex gap-2 items-center w-full min-w-0">
                   <input
@@ -829,29 +1001,33 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
 
           {/* Skip section */}
           {!isCorrect && (
-            <div className="flex flex-col items-center gap-2">
-              <button
-                onClick={handleSkip}
-                disabled={skipsUsed >= 2 || answerState !== 'idle' || skipping}
-                className="btn-scale flex items-center gap-2 bg-white/25 hover:bg-white/40 disabled:opacity-40 text-white font-bold px-5 py-2.5 rounded-2xl text-sm backdrop-blur-sm border border-white/30 shadow"
-              >
-                Đổi câu hỏi 🔄
-              </button>
-              {/* Skip icons */}
-              <div className="flex items-center gap-1.5">
-                {[0, 1].map((i) => (
-                  <span
-                    key={i}
-                    className={`text-xl transition-opacity ${i < skipsLeft ? 'opacity-100' : 'opacity-25'}`}
-                  >
-                    🔄
+            dailySkipLimitReached ? (
+              <p className="text-white/70 text-sm font-semibold">Hết lượt đổi câu hôm nay 🌙</p>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  onClick={handleSkip}
+                  disabled={skipsUsed >= 2 || answerState !== 'idle' || skipping}
+                  className="btn-scale flex items-center gap-2 bg-white/25 hover:bg-white/40 disabled:opacity-40 text-white font-bold px-5 py-2.5 rounded-2xl text-sm backdrop-blur-sm border border-white/30 shadow"
+                >
+                  Đổi câu hỏi 🔄 (còn {dailySkipsRemaining} lần hôm nay)
+                </button>
+                {/* Skip icons */}
+                <div className="flex items-center gap-1.5">
+                  {[0, 1].map((i) => (
+                    <span
+                      key={i}
+                      className={`text-xl transition-opacity ${i < skipsLeft ? 'opacity-100' : 'opacity-25'}`}
+                    >
+                      🔄
+                    </span>
+                  ))}
+                  <span className="text-white/60 text-xs font-semibold ml-1">
+                    {skipsLeft} lần còn lại
                   </span>
-                ))}
-                <span className="text-white/60 text-xs font-semibold ml-1">
-                  {skipsLeft} lần còn lại
-                </span>
+                </div>
               </div>
-            </div>
+            )
           )}
 
           {/* Quit button */}
@@ -865,7 +1041,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
                   totalDone,
                   correctCount,
                 };
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+                localStorage.setItem(getProgressKey(), JSON.stringify(data));
               }
               setView('home');
               loadHomeData();

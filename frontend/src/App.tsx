@@ -1,39 +1,46 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
+import { authService, onUnauthorized } from './services/authService';
+import type { AuthUser } from './services/authService';
+import LoginPage from './pages/LoginPage';
 import StudentMode from './pages/StudentMode';
 import ParentMode from './pages/ParentMode';
-import PinModal from './components/PinModal';
-
-type Mode = 'student' | 'parent';
+import TeacherDashboard from './pages/TeacherDashboard';
 
 function App() {
-  const [mode, setMode] = useState<Mode>('student');
-  const [showPinModal, setShowPinModal] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
 
-  const handleSwitchToParent = () => setShowPinModal(true);
+  // Auto-logout when any API call returns 401 (expired/invalid token)
+  useEffect(() => {
+    return onUnauthorized(() => {
+      setUser(null);
+    });
+  }, []);
 
-  const handlePinSuccess = () => {
-    setShowPinModal(false);
-    setMode('parent');
+  const handleLogin = (loggedInUser: AuthUser) => setUser(loggedInUser);
+
+  const handleLogout = () => {
+    authService.logout();
+    setUser(null);
   };
 
-  const handlePinCancel = () => setShowPinModal(false);
+  if (!user) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
-  const handleExitToStudent = () => setMode('student');
+  if (user.role === 'student') {
+    return <StudentMode onSwitchToParent={handleLogout} />;
+  }
 
-  return (
-    <>
-      {mode === 'student' && (
-        <StudentMode onSwitchToParent={handleSwitchToParent} />
-      )}
-      {mode === 'parent' && (
-        <ParentMode onExitToStudent={handleExitToStudent} />
-      )}
-      {showPinModal && (
-        <PinModal onSuccess={handlePinSuccess} onCancel={handlePinCancel} />
-      )}
-    </>
-  );
+  if (user.role === 'parent') {
+    return <ParentMode onExitToStudent={handleLogout} />;
+  }
+
+  if (user.role === 'teacher') {
+    return <TeacherDashboard onLogout={handleLogout} />;
+  }
+
+  return null;
 }
 
 export default App;

@@ -2,57 +2,80 @@ import { Router, Request, Response } from 'express';
 import {
   readScores, writeScores,
   readExercises, writeExercises,
+  markSessionComplete, deleteAllSessions,
   readRewards, writeRewards,
-} from '../services/storageService';
+  ForbiddenError,
+} from '../services/storageServiceSQLite';
+import type { AuthRequest } from '../middleware/authMiddleware';
+import { resolveStudentId } from '../middleware/resolveStudent';
+import { getUsage, getCurrentDate } from '../services/rateLimitService';
 
 const router = Router();
 
 // --- Scores ---
-router.get('/scores', (_req: Request, res: Response) => {
+router.get('/scores', (req: Request, res: Response) => {
+  const studentId = resolveStudentId(req as AuthRequest, res);
+  if (studentId === null) return;
   try {
-    res.json(readScores());
+    res.json(readScores(studentId));
   } catch (err) {
-    res.status(500).json({ error: 'Failed to read scores' });
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to read scores' });
   }
 });
 
 router.post('/scores', (req: Request, res: Response) => {
+  const studentId = resolveStudentId(req as AuthRequest, res);
+  if (studentId === null) return;
   try {
-    writeScores(req.body);
+    writeScores(studentId, req.body);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to write scores' });
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to write scores' });
   }
 });
 
 // --- Exercises ---
-router.get('/exercises', (_req: Request, res: Response) => {
+router.get('/exercises', (req: Request, res: Response) => {
+  const studentId = resolveStudentId(req as AuthRequest, res);
+  if (studentId === null) return;
   try {
-    res.json(readExercises());
+    res.json(readExercises(studentId));
   } catch (err) {
-    res.status(500).json({ error: 'Failed to read exercises' });
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to read exercises' });
   }
 });
 
 router.post('/exercises', (req: Request, res: Response) => {
+  const studentId = resolveStudentId(req as AuthRequest, res);
+  if (studentId === null) return;
   try {
-    writeExercises(req.body);
+    writeExercises(studentId, req.body);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to write exercises' });
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to write exercises' });
+  }
+});
+
+router.delete('/exercises/all', (req: Request, res: Response) => {
+  const studentId = resolveStudentId(req as AuthRequest, res);
+  if (studentId === null) return;
+  try {
+    deleteAllSessions(studentId);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to delete sessions' });
   }
 });
 
 // --- Session completion ---
 router.patch('/sessions/:id/complete', (req: Request, res: Response) => {
+  const studentId = resolveStudentId(req as AuthRequest, res);
+  if (studentId === null) return;
   try {
-    const exercises = readExercises();
-    const session = exercises.sessions.find((s) => s.id === req.params.id);
-    if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
-    session.completed = true;
-    writeExercises(exercises);
+    markSessionComplete(String(req.params.id), studentId);
     res.json({ ok: true });
-  } catch {
+  } catch (err) {
+    if (err instanceof ForbiddenError) { res.status(403).json({ error: err.message }); return; }
     res.status(500).json({ error: 'Failed to complete session' });
   }
 });
@@ -61,7 +84,7 @@ router.patch('/sessions/:id/complete', (req: Request, res: Response) => {
 router.get('/rewards', (_req: Request, res: Response) => {
   try {
     res.json(readRewards());
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to read rewards' });
   }
 });
@@ -70,9 +93,27 @@ router.post('/rewards', (req: Request, res: Response) => {
   try {
     writeRewards(req.body);
     res.json({ ok: true });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to write rewards' });
   }
+});
+
+// --- Usage ---
+router.get('/usage', (req: Request, res: Response) => {
+  const { userId, role } = (req as AuthRequest).user;
+  const genLimit = role === 'teacher' ? 20 : role === 'parent' ? 10 : 0;
+  const skipLimit = role === 'student' ? 20 : 0;
+  const genUsed = getUsage(userId, 'generate_exercises');
+  const skipUsed = getUsage(userId, 'skip_question');
+  const today = getCurrentDate();
+  const [y, m, d] = today.split('-').map(Number);
+  const tomorrow = new Date(Date.UTC(y, m - 1, d + 1));
+  const resetsAt = `${tomorrow.toISOString().slice(0, 10)} 00:00 UTC+7`;
+  res.json({
+    generate_exercises: { used: genUsed, limit: genLimit, remaining: Math.max(0, genLimit - genUsed) },
+    skip_question: { used: skipUsed, limit: skipLimit, remaining: Math.max(0, skipLimit - skipUsed) },
+    resetsAt,
+  });
 });
 
 export default router;

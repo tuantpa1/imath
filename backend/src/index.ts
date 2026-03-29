@@ -1,21 +1,33 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { authMiddleware } from './middleware/authMiddleware';
+import { requestLogger } from './middleware/requestLogger';
+import authRoutes from './routes/authRoutes';
 import dataRoutes from './routes/dataRoutes';
 import uploadRoutes from './routes/uploadRoutes';
+import teacherRoutes from './routes/teacherRoutes';
+import parentRoutes from './routes/parentRoutes';
 
 const app = express();
 const PORT = 3001;
 
 app.use(cors({ origin: true }));
 app.use(express.json());
+app.use(requestLogger);
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/api', dataRoutes);
-app.use('/api', uploadRoutes);
+// Public auth routes — no token required
+app.use('/auth', authRoutes);
+
+// Protected API routes — valid JWT required
+app.use('/api', authMiddleware, dataRoutes);
+app.use('/api', authMiddleware, uploadRoutes);
+app.use('/teacher', authMiddleware, teacherRoutes);
+app.use('/parent', authMiddleware, parentRoutes);
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`iMath backend running on http://0.0.0.0:${PORT}`);
