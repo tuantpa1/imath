@@ -2,11 +2,10 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GeneratedQuestion, GenerateResult, SkipResult, ValidMime } from './claudeService';
 import { mergeRelatedQuestionsExport } from './claudeService';
 
-// Lazy client — instantiated on first call so .env is always loaded first
-let _genAI: GoogleGenerativeAI | null = null;
+// Re-created on every call so PM2 env vars are always read fresh
 function getModel() {
-  if (!_genAI) _genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-  return _genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+  return genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 }
 
 function cleanJson(text: string): string {
