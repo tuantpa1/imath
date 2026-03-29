@@ -1,7 +1,14 @@
 const TOKEN_KEY = 'imath_token';
 const USER_KEY = 'imath_user';
 
-const AUTH_BASE = `${window.location.protocol}//${window.location.hostname}:3001/auth`;
+const getBaseUrl = () => {
+  const { protocol, hostname, port } = window.location;
+  if (!port || port === '443' || port === '80') {
+    return `${protocol}//${hostname}`;
+  }
+  return `${protocol}//${hostname}:${port}`;
+};
+const AUTH_BASE = `${getBaseUrl()}/auth`;
 
 export interface AuthUser {
   id: number;
