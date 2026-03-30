@@ -10,7 +10,8 @@ interface Child {
 
 interface AnswerPart {
   label: string;
-  answer: number;
+  answer?: number;
+  answer_text?: string;
   unit: string;
 }
 
@@ -186,37 +187,44 @@ function SuccessView({
           <p className="px-5 py-8 text-center text-gray-400 font-semibold">Không còn câu hỏi nào</p>
         ) : (
           <ul className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
-            {questions.map((q, i) => (
-              <li key={q.id ?? i} className="flex items-start gap-3 px-5 py-3 hover:bg-gray-50 transition-colors group">
-                <span className="text-xl mt-0.5 shrink-0">{typeEmoji[q.type] ?? '❓'}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-gray-800 text-sm leading-snug">{q.question}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Đáp án:{' '}
-                    <span className="font-extrabold text-purple-600">
-                      {q.type === 'multi_answer' && q.answers
-                        ? q.answers.map(a => `${a.label}: ${a.answer}${a.unit ? ' ' + a.unit : ''}`).join(' | ')
-                        : q.type === 'fraction'
-                        ? (q.answer_text || 'N/A')
-                        : `${q.answer ?? ''}${q.unit ? ` ${q.unit}` : ''}`}
+            {questions.map((q, i) => {
+              const answerDisplay = q.type === 'multi_answer' && q.answers
+                ? q.answers.map(a => {
+                    const val = a.answer !== undefined ? `${a.answer}` : (a.answer_text ?? '?');
+                    return `${a.label}: ${val}${a.unit ? ' ' + a.unit : ''}`;
+                  }).join(' | ')
+                : q.type === 'fraction'
+                ? (q.answer_text || 'N/A')
+                : `${q.answer ?? ''}${q.unit ? ` ${q.unit}` : ''}`;
+
+              return (
+                <li key={q.id ?? i} className="flex items-start gap-2 px-4 py-3 hover:bg-gray-50 transition-colors">
+                  <span className="text-xl mt-0.5 shrink-0">{typeEmoji[q.type] ?? '❓'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-800 text-sm leading-snug">{q.question}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Đáp án:{' '}
+                      <span className="font-extrabold text-purple-600">{answerDisplay}</span>
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${diffStyle[q.difficulty] ?? 'bg-gray-100 text-gray-500'}`}>
+                      {q.difficulty}
                     </span>
-                  </p>
-                </div>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${diffStyle[q.difficulty] ?? 'bg-gray-100 text-gray-500'}`}>
-                  {q.difficulty}
-                </span>
-                {q.id && (
-                  <button
-                    onClick={() => handleDelete(q)}
-                    disabled={deletingId === q.id}
-                    title="Xóa câu hỏi"
-                    className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-300 hover:text-rose-500 transition-all disabled:opacity-30 ml-1 mt-0.5"
-                  >
-                    {deletingId === q.id ? '…' : '🗑️'}
-                  </button>
-                )}
-              </li>
-            ))}
+                    {q.id && (
+                      <button
+                        onClick={() => handleDelete(q)}
+                        disabled={deletingId === q.id}
+                        title="Xóa câu hỏi"
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-300 hover:text-rose-500 active:text-rose-600 transition-colors disabled:opacity-30 cursor-pointer"
+                      >
+                        {deletingId === q.id ? '⏳' : '🗑️'}
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
