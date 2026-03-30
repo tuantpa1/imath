@@ -254,16 +254,6 @@ export function createSession(
   rawQuestions: RawClaudeQuestion[],
   isExtra: boolean
 ): Session {
-  console.log('[DB] createSession called with:', {
-    studentId,
-    createdBy,
-    imagePaths: imagePaths.length + ' images',
-  });
-  const studentExists = db.prepare('SELECT id FROM users WHERE id = ?').get(studentId);
-  const creatorExists = db.prepare('SELECT id FROM users WHERE id = ?').get(createdBy);
-  console.log('[DB] studentExists:', studentExists);
-  console.log('[DB] creatorExists:', creatorExists);
-
   const count = (db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
   const sessionId = `session_${String(count + 1).padStart(3, '0')}`;
   const today = new Date().toISOString().split('T')[0];

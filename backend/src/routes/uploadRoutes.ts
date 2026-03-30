@@ -74,10 +74,6 @@ router.post('/generate-exercises', upload.array('images', 10), async (req: Reque
 
   const studentId = resolveStudentId(authReq, res);
   if (studentId === null) return;
-  console.log('[UPLOAD] generate-exercises studentId:', studentId);
-  console.log('[UPLOAD] generate-exercises userId:', authReq.user?.userId);
-  console.log('[UPLOAD] generate-exercises role:', authReq.user?.role);
-
   const files = req.files as Express.Multer.File[] | undefined;
   if (!files || files.length === 0) {
     res.status(400).json({ error: 'No image files uploaded' });
@@ -168,10 +164,6 @@ router.post('/generate-extra', async (req: Request, res: Response) => {
 
   const studentId = resolveStudentId(authReq, res);
   if (studentId === null) return;
-  console.log('[UPLOAD] generate-extra studentId:', studentId);
-  console.log('[UPLOAD] generate-extra userId:', authReq.user?.userId);
-  console.log('[UPLOAD] generate-extra role:', authReq.user?.role);
-
   const { imagePaths, previousQuestions, count } = req.body as {
     imagePaths?: string[];
     previousQuestions?: string[];
