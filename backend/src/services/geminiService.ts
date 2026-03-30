@@ -5,7 +5,7 @@ import { mergeRelatedQuestionsExport } from './claudeService';
 // Re-created on every call so PM2 env vars are always read fresh
 function getModel() {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-  return genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+  return genAI.getGenerativeModel({ model: 'gemini-2.0-flash-lite' });
 }
 
 function cleanJson(text: string): string {
