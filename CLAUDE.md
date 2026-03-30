@@ -10,7 +10,7 @@ Parents upload textbook photos → Claude AI generates exercises → Children co
 ## Tech Stack
 - **Frontend:** React + TypeScript (port 3000)
 - **Backend:** Node.js + Express + TypeScript (port 3001)
-- **AI:** Claude (`claude-sonnet-4-20250514`) or Gemini 2.0 Flash — switched via `AI_MODEL` env var
+- **AI:** Claude (`claude-sonnet-4-20250514`) or Gemini 2.5 Flash (`gemini-2.5-flash`) — switched via `AI_MODEL` env var
 - **Storage:** SQLite (`data/imath.db`) via `better-sqlite3` — JSON files retired to `*.backup`
 - **Auth:** JWT (jsonwebtoken) + bcrypt, stored in localStorage
 - **Language:** UI in Vietnamese, code in English
@@ -237,7 +237,7 @@ cd backend && npx tsc
 - See `NETWORK_SETUP.md` for the Vietnamese setup guide
 
 ## Constraints
-- AI model selected via `AI_MODEL` env var: `claude` (default) → `claude-sonnet-4-20250514`; `gemini` → `gemini-2.0-flash`
+- AI model selected via `AI_MODEL` env var: `claude` (default) → `claude-sonnet-4-20250514`; `gemini` → `gemini-2.5-flash`
 - To switch model on VPS: edit `.env` then `pm2 restart imath-backend --update-env`
 - SQLite only — no external databases, no Redis
 - Allowed UI libraries: Tailwind CSS, canvas-confetti, Google Fonts (Baloo 2)
