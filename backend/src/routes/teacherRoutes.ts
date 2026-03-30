@@ -116,6 +116,13 @@ router.post('/students', async (req: Request, res: Response) => {
       db.prepare('INSERT OR IGNORE INTO family_links (parent_id, student_id) VALUES (?, ?)').run(newId, linkToStudentId);
     }
 
+    // Auto-create unlimited quota row for new parent (prevents FOREIGN KEY errors in token_usage_log)
+    if (role === 'parent') {
+      db.prepare(
+        'INSERT OR IGNORE INTO token_quotas (parent_id, total_tokens, used_tokens) VALUES (?, 999999999, 0)'
+      ).run(newId);
+    }
+
     res.json({ ok: true, id: newId });
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
