@@ -6,8 +6,8 @@ const BASE = (() => {
   if (!port || port === '443' || port === '80') {
     return `${protocol}//${hostname}`;
   }
-  // In local dev, use the current port (Vite proxy or explicit port)
-  return `${protocol}//${hostname}:${port}`;
+  // Local dev: backend always runs on 3001 regardless of frontend port
+  return `${protocol}//${hostname}:3001`;
 })();
 
 // ── Typed error class ──────────────────────────────────────────────────────────

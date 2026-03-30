@@ -3,10 +3,12 @@ const USER_KEY = 'imath_user';
 
 const getBaseUrl = () => {
   const { protocol, hostname, port } = window.location;
+  // Production (standard ports): use same host, no port
   if (!port || port === '443' || port === '80') {
     return `${protocol}//${hostname}`;
   }
-  return `${protocol}//${hostname}:${port}`;
+  // Local dev: backend always runs on 3001 regardless of frontend port
+  return `${protocol}//${hostname}:3001`;
 };
 const AUTH_BASE = `${getBaseUrl()}/auth`;
 
