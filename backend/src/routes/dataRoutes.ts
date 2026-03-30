@@ -3,6 +3,7 @@ import {
   readScores, writeScores,
   readExercises, writeExercises,
   markSessionComplete, deleteAllSessions,
+  deleteQuestion,
   readRewards, writeRewards,
   ForbiddenError,
 } from '../services/storageServiceSQLite';
@@ -64,6 +65,23 @@ router.delete('/exercises/all', (req: Request, res: Response) => {
     res.json({ ok: true });
   } catch {
     res.status(500).json({ error: 'Failed to delete sessions' });
+  }
+});
+
+// --- Delete individual question ---
+router.delete('/questions/:questionId', (req: Request, res: Response) => {
+  const { userId, role } = (req as AuthRequest).user;
+  if (role === 'student') {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+  try {
+    const remaining = deleteQuestion(String(req.params.questionId), userId, role);
+    res.json({ success: true, remainingQuestions: remaining });
+  } catch (err) {
+    if (err instanceof ForbiddenError) { res.status(403).json({ error: err.message }); return; }
+    if (err instanceof Error && err.message === 'Question not found') { res.status(404).json({ error: err.message }); return; }
+    res.status(500).json({ error: 'Failed to delete question' });
   }
 });
 

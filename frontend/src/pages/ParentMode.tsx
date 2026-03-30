@@ -15,6 +15,7 @@ interface AnswerPart {
 }
 
 interface GeneratedQuestion {
+  id?: string;
   question: string;
   answer?: number;
   answer_text?: string;
@@ -138,14 +139,33 @@ function SuccessView({
   questions,
   onBack,
   onUploadMore,
+  onDeleteQuestion,
 }: {
   questions: GeneratedQuestion[];
   onBack: () => void;
   onUploadMore: () => void;
+  onDeleteQuestion: (id: string) => Promise<void>;
 }) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState('');
+
   const typeEmoji: Record<string, string> = {
     addition: '➕', subtraction: '➖', multiplication: '✖️',
     division: '➗', word_problem: '📝',
+  };
+
+  const handleDelete = async (q: GeneratedQuestion) => {
+    if (!q.id) return;
+    if (!window.confirm('Xóa câu hỏi này?')) return;
+    setDeletingId(q.id);
+    setDeleteError('');
+    try {
+      await onDeleteQuestion(q.id);
+    } catch {
+      setDeleteError('Không thể xóa câu hỏi. Vui lòng thử lại.');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -162,30 +182,48 @@ function SuccessView({
         <div className="px-5 py-3.5 bg-purple-50 border-b border-purple-100">
           <p className="font-extrabold text-purple-700 text-sm">📋 Danh sách bài tập</p>
         </div>
-        <ul className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
-          {questions.map((q, i) => (
-            <li key={i} className="flex items-start gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
-              <span className="text-xl mt-0.5 shrink-0">{typeEmoji[q.type] ?? '❓'}</span>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-gray-800 text-sm leading-snug">{q.question}</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Đáp án:{' '}
-                  <span className="font-extrabold text-purple-600">
-                    {q.type === 'multi_answer' && q.answers
-                      ? q.answers.map(a => `${a.label}: ${a.answer}${a.unit ? ' ' + a.unit : ''}`).join(' | ')
-                      : q.type === 'fraction'
-                      ? (q.answer_text || 'N/A')
-                      : `${q.answer ?? ''}${q.unit ? ` ${q.unit}` : ''}`}
-                  </span>
-                </p>
-              </div>
-              <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${diffStyle[q.difficulty] ?? 'bg-gray-100 text-gray-500'}`}>
-                {q.difficulty}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {questions.length === 0 ? (
+          <p className="px-5 py-8 text-center text-gray-400 font-semibold">Không còn câu hỏi nào</p>
+        ) : (
+          <ul className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+            {questions.map((q, i) => (
+              <li key={q.id ?? i} className="flex items-start gap-3 px-5 py-3 hover:bg-gray-50 transition-colors group">
+                <span className="text-xl mt-0.5 shrink-0">{typeEmoji[q.type] ?? '❓'}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-gray-800 text-sm leading-snug">{q.question}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Đáp án:{' '}
+                    <span className="font-extrabold text-purple-600">
+                      {q.type === 'multi_answer' && q.answers
+                        ? q.answers.map(a => `${a.label}: ${a.answer}${a.unit ? ' ' + a.unit : ''}`).join(' | ')
+                        : q.type === 'fraction'
+                        ? (q.answer_text || 'N/A')
+                        : `${q.answer ?? ''}${q.unit ? ` ${q.unit}` : ''}`}
+                    </span>
+                  </p>
+                </div>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${diffStyle[q.difficulty] ?? 'bg-gray-100 text-gray-500'}`}>
+                  {q.difficulty}
+                </span>
+                {q.id && (
+                  <button
+                    onClick={() => handleDelete(q)}
+                    disabled={deletingId === q.id}
+                    title="Xóa câu hỏi"
+                    className="shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-300 hover:text-rose-500 transition-all disabled:opacity-30 ml-1 mt-0.5"
+                  >
+                    {deletingId === q.id ? '…' : '🗑️'}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
+
+      {deleteError && (
+        <p className="text-rose-500 font-semibold text-sm text-center">{deleteError}</p>
+      )}
 
       <button
         onClick={onUploadMore}
@@ -515,11 +553,12 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
       files.forEach((f) => formData.append('images', f));
       formData.append('count', String(parseInt(questionCountStr, 10) || 10));
 
-      const genData = await api.post<{ questions: GeneratedQuestion[] }>(
+      const genData = await api.post<{ questions: GeneratedQuestion[]; session: { questions: GeneratedQuestion[] } }>(
         `/api/generate-exercises?studentId=${selectedChildId}`,
         formData
       );
-      const rawQuestions: GeneratedQuestion[] = genData.questions ?? [];
+      // Use session.questions — they carry IDs needed for per-question deletion
+      const rawQuestions: GeneratedQuestion[] = genData.session?.questions ?? genData.questions ?? [];
       if (rawQuestions.length === 0) throw new Error('Không thể tạo bài tập, vui lòng thử lại.');
 
       setQuestions(rawQuestions);
@@ -627,6 +666,10 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
             questions={questions}
             onBack={() => { resetUpload(); setView('dashboard'); }}
             onUploadMore={resetUpload}
+            onDeleteQuestion={async (id) => {
+              await api.delete(`/api/questions/${id}`);
+              setQuestions((prev) => prev.filter((q) => q.id !== id));
+            }}
           />
         ) : (
           <div className="w-full max-w-lg flex flex-col gap-4 animate-fade-in">

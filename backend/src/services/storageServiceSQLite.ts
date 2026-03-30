@@ -314,6 +314,36 @@ export function markSessionComplete(sessionId: string, studentId: number): void 
     .run(sessionId, studentId);
 }
 
+export function deleteQuestion(questionId: string, userId: number, role: string): number {
+  const qRow = db
+    .prepare('SELECT session_id FROM questions WHERE id = ?')
+    .get(questionId) as { session_id: string } | undefined;
+  if (!qRow) throw new Error('Question not found');
+
+  const sessionRow = db
+    .prepare('SELECT created_by FROM sessions WHERE id = ?')
+    .get(qRow.session_id) as { created_by: number } | undefined;
+  if (!sessionRow) throw new Error('Session not found');
+  if (role === 'parent' && sessionRow.created_by !== userId) {
+    throw new ForbiddenError('Access denied');
+  }
+
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM questions WHERE id = ?').run(questionId);
+    const remaining = (
+      db.prepare('SELECT COUNT(*) AS c FROM questions WHERE session_id = ?')
+        .get(qRow.session_id) as { c: number }
+    ).c;
+    if (remaining === 0) {
+      db.prepare('DELETE FROM sessions WHERE id = ?').run(qRow.session_id);
+    } else {
+      db.prepare('UPDATE sessions SET question_count = ? WHERE id = ?').run(remaining, qRow.session_id);
+    }
+    return remaining;
+  });
+  return tx();
+}
+
 export function deleteAllSessions(studentId: number): void {
   const tx = db.transaction(() => {
     const sessions = db.prepare('SELECT id FROM sessions WHERE student_id = ?').all(studentId) as { id: string }[];
