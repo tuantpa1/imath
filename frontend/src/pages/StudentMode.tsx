@@ -34,8 +34,8 @@ interface Session {
 
 interface WrongQuestionPart {
   label: string;
-  correctAnswer: number;
-  studentAnswer: number;
+  correctAnswer: number | string;
+  studentAnswer: number | string;
   unit: string;
 }
 

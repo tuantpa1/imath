@@ -474,8 +474,6 @@ function UsageTab() {
 
   useEffect(() => { loadUsage(); }, []);
 
-  const skipLimit = (role: string) => role === 'student' ? 20 : 0;
-
   const handleSaveLimit = async (userId: number) => {
     const val = parseInt(limitInputs[userId] ?? '', 10);
     if (isNaN(val) || val < 0) return;
