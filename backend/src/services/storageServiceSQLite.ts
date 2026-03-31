@@ -190,7 +190,7 @@ export function readExercises(studentId: number): Exercises {
       if (q.type === 'fraction') {
         const frac: FractionQuestion = {
           id: q.id, question: q.question_text, type: 'fraction', difficulty: q.difficulty,
-          answer_text: q.answer_text ?? '', unit: q.unit,
+          answer_text: q.answer_text ?? String(q.answer ?? ''), unit: q.unit,
         };
         return frac;
       }
@@ -342,6 +342,66 @@ export function deleteQuestion(questionId: string, userId: number, role: string)
     return remaining;
   });
   return tx();
+}
+
+/**
+ * Generates questions for ALL active students in one batch:
+ * - Deletes every incomplete session per student (completed sessions preserved)
+ * - Creates one new session per student with the same rawQuestions
+ * Returns the number of students that received sessions.
+ */
+export function createSessionForAllStudents(
+  createdBy: number,
+  imagePaths: string[],
+  rawQuestions: RawClaudeQuestion[],
+): number {
+  const students = db
+    .prepare("SELECT id FROM users WHERE role = 'student' AND is_active = 1")
+    .all() as Array<{ id: number }>;
+
+  if (students.length === 0) return 0;
+
+  const now = Date.now();
+  const today = new Date().toISOString().split('T')[0];
+  const imagePathsJson = JSON.stringify(imagePaths);
+
+  const tx = db.transaction(() => {
+    for (const { id: studentId } of students) {
+      // Remove all incomplete sessions (and their questions) for this student
+      const incompleteIds = db
+        .prepare('SELECT id FROM sessions WHERE student_id = ? AND completed = 0')
+        .all(studentId) as Array<{ id: string }>;
+      for (const s of incompleteIds) {
+        db.prepare('DELETE FROM questions WHERE session_id = ?').run(s.id);
+      }
+      db.prepare('DELETE FROM sessions WHERE student_id = ? AND completed = 0').run(studentId);
+
+      // Create new session
+      const sessionId = `session_all_${now}_${studentId}`;
+      db.prepare(
+        `INSERT INTO sessions (id, created_by, student_id, image_paths, created_at, question_count, is_extra, completed)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 0)`
+      ).run(sessionId, createdBy, studentId, imagePathsJson, today, rawQuestions.length);
+
+      const insertQ = db.prepare(
+        `INSERT INTO questions (id, session_id, question_text, type, difficulty, answer, answer_text, answers_json, order_matters, unit)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      rawQuestions.forEach((q, i) => {
+        const qId = `${sessionId}_q${i + 1}`;
+        if (q.answers) {
+          insertQ.run(qId, sessionId, q.question, 'multi_answer', q.difficulty, null, null, JSON.stringify(q.answers), (q.order_matters ?? true) ? 1 : 0, q.unit ?? '');
+        } else if (q.type === 'fraction' && q.answer_text) {
+          insertQ.run(qId, sessionId, q.question, 'fraction', q.difficulty, null, q.answer_text, null, 1, q.unit ?? '');
+        } else {
+          insertQ.run(qId, sessionId, q.question, q.type, q.difficulty, q.answer ?? 0, null, null, 1, q.unit ?? '');
+        }
+      });
+    }
+  });
+  tx();
+
+  return students.length;
 }
 
 export function deleteAllSessions(studentId: number): void {

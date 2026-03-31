@@ -7,6 +7,7 @@ import confetti from 'canvas-confetti';
 interface AnswerPart {
   label: string;
   answer: number;
+  answer_text?: string;  // fraction answers: "9/6"
   unit: string;
 }
 
@@ -242,6 +243,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
   const [correctCount, setCorrectCount] = useState(0);
   const [answerInput, setAnswerInput] = useState('');
   const [multiInputs, setMultiInputs] = useState<string[]>([]);
+  const [focusedPartIndex, setFocusedPartIndex] = useState<number | null>(null);
   const [answerState, setAnswerState] = useState<AnswerState>('idle');
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [skipsUsed, setSkipsUsed] = useState(0);
@@ -450,16 +452,25 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
 
     if (isMulti) {
       const parts = currentQ.answers!;
-      const parsedInputs = parts.map((_, i) => parseFloat((multiInputs[i] ?? '').trim()));
-      if (parsedInputs.some(isNaN)) return;
+      const studentInputs = parts.map((_, i) => (multiInputs[i] ?? '').trim());
+      if (studentInputs.some((v) => v === '')) return;
+
+      const partCorrect = (part: AnswerPart, studentVal: string): boolean => {
+        if (part.answer_text?.includes('/')) {
+          return compareFractionAnswer(studentVal, part.answer_text);
+        }
+        const n = parseFloat(studentVal);
+        return !isNaN(n) && n === part.answer;
+      };
 
       let allCorrect: boolean;
       if (currentQ.order_matters === false) {
-        const studentSorted = [...parsedInputs].sort((a, b) => a - b);
+        // unordered numeric only — sort and compare
+        const studentSorted = [...studentInputs].map(parseFloat).sort((a, b) => a - b);
         const correctSorted = parts.map((p) => p.answer).sort((a, b) => a - b);
         allCorrect = studentSorted.every((val, i) => val === correctSorted[i]);
       } else {
-        allCorrect = parsedInputs.every((val, i) => val === parts[i].answer);
+        allCorrect = parts.every((part, i) => partCorrect(part, studentInputs[i]));
       }
 
       if (allCorrect) {
@@ -497,11 +508,12 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
         const newWrongEntries: WrongQuestion[] = [];
         let feedbackLines: string[];
 
+        const correctDisplay = (p: AnswerPart) =>
+          `${p.answer_text ?? p.answer}${p.unit ? ' ' + p.unit : ''}`;
+
         if (currentQ.order_matters === false) {
           // unordered: single summary feedback, save as one combined entry
-          const correctStr = parts
-            .map((p) => `${p.answer}${p.unit ? ' ' + p.unit : ''}`)
-            .join(' và ');
+          const correctStr = parts.map(correctDisplay).join(' và ');
           feedbackLines = [`❌ Sai rồi! 💪 Đáp án đúng là: ${correctStr}`];
           newWrongEntries.push({
             question: currentQ.question,
@@ -509,8 +521,8 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
             date: today(),
             parts: parts.map((part, i) => ({
               label: part.label,
-              correctAnswer: part.answer,
-              studentAnswer: parsedInputs[i],
+              correctAnswer: part.answer_text ?? part.answer,
+              studentAnswer: studentInputs[i],
               unit: part.unit ?? '',
             })),
           });
@@ -522,17 +534,17 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
             date: today(),
             parts: parts.map((part, i) => ({
               label: part.label,
-              correctAnswer: part.answer,
-              studentAnswer: parsedInputs[i],
+              correctAnswer: part.answer_text ?? part.answer,
+              studentAnswer: studentInputs[i],
               unit: part.unit ?? '',
             })),
           });
           feedbackLines = parts.map((part, i) => {
             const unitStr = part.unit ? ` ${part.unit}` : '';
-            const isPartCorrect = parsedInputs[i] === part.answer;
+            const isPartCorrect = partCorrect(part, studentInputs[i]);
             return isPartCorrect
-              ? `✅ ${part.label}: ${part.answer}${unitStr} — Đúng!`
-              : `❌ ${part.label}: bạn điền ${parsedInputs[i]}, đáp án đúng là ${part.answer}${unitStr}`;
+              ? `✅ ${part.label}: ${correctDisplay(part)} — Đúng!`
+              : `❌ ${part.label}: bạn điền ${studentInputs[i]}, đáp án đúng là ${correctDisplay(part)}${unitStr}`;
           });
         }
 
@@ -686,6 +698,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     setTotalDone((d) => d + 1);
     setAnswerInput('');
     setMultiInputs([]);
+    setFocusedPartIndex(null);
     setAnswerState('idle');
     setTimeout(() => inputRef.current?.focus(), 100);
   }
@@ -901,36 +914,67 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
                       Điền đúng vào từng ô nhé! 📝
                     </p>
                   )}
-                  {currentQ.answers!.map((part, i) => (
-                    <div key={i} className="flex gap-2 items-center w-full min-w-0">
-                      <span className="text-indigo-600 font-bold text-sm flex-shrink-0 text-right">
-                        {part.label}:
-                      </span>
-                      <input
-                        ref={i === 0 ? inputRef : undefined}
-                        type="number"
-                        inputMode="numeric"
-                        value={multiInputs[i] ?? ''}
-                        onChange={(e) => {
-                          const next = [...multiInputs];
-                          next[i] = e.target.value;
-                          setMultiInputs(next);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && i === currentQ.answers!.length - 1)
-                            handleCheckAnswer();
-                        }}
-                        disabled={isBusy}
-                        placeholder="Đáp án..."
-                        className="input-glow flex-1 min-w-0 text-xl font-extrabold text-center border-4 border-indigo-200 rounded-2xl py-2 px-3 focus:border-indigo-500 disabled:opacity-50 transition-all"
-                      />
-                      {part.unit && (
-                        <span className="bg-indigo-100 text-indigo-700 font-extrabold px-3 py-2 rounded-2xl text-sm whitespace-nowrap flex-shrink-0">
-                          {part.unit}
+                  {currentQ.answers!.map((part, i) => {
+                    const isFracPart = !!part.answer_text?.includes('/');
+                    return (
+                      <div key={i} className="flex gap-2 items-center w-full min-w-0">
+                        <span className="text-indigo-600 font-bold text-sm flex-shrink-0 text-right">
+                          {part.label}:
                         </span>
-                      )}
-                    </div>
-                  ))}
+                        {isFracPart ? (
+                          <div
+                            onPointerDown={(e) => { e.preventDefault(); if (!isBusy) setFocusedPartIndex(i); }}
+                            className={`input-glow flex-1 min-w-0 border-4 rounded-2xl py-2 px-3 min-h-[48px] flex items-center justify-center transition-all
+                              ${focusedPartIndex === i ? 'border-violet-500 bg-violet-50' : 'border-indigo-200 bg-white'}
+                              ${isBusy ? 'opacity-50' : 'cursor-pointer'}`}
+                          >
+                            {multiInputs[i] ? (
+                              <span className="text-xl font-extrabold text-violet-700">
+                                {renderWithFractions(multiInputs[i])}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-base font-semibold">Nhấn để nhập...</span>
+                            )}
+                          </div>
+                        ) : (
+                          <input
+                            ref={i === 0 ? inputRef : undefined}
+                            type="number"
+                            inputMode="numeric"
+                            value={multiInputs[i] ?? ''}
+                            onChange={(e) => {
+                              const next = [...multiInputs];
+                              next[i] = e.target.value;
+                              setMultiInputs(next);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && i === currentQ.answers!.length - 1)
+                                handleCheckAnswer();
+                            }}
+                            disabled={isBusy}
+                            placeholder="Đáp án..."
+                            className="input-glow flex-1 min-w-0 text-xl font-extrabold text-center border-4 border-indigo-200 rounded-2xl py-2 px-3 focus:border-indigo-500 disabled:opacity-50 transition-all"
+                          />
+                        )}
+                        {part.unit && (
+                          <span className="bg-indigo-100 text-indigo-700 font-extrabold px-3 py-2 rounded-2xl text-sm whitespace-nowrap flex-shrink-0">
+                            {part.unit}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {currentQ.answers!.some(p => p.answer_text?.includes('/')) && focusedPartIndex !== null && (
+                    <FractionKeyboard
+                      value={multiInputs[focusedPartIndex] ?? ''}
+                      onChange={(v) => {
+                        const next = [...multiInputs];
+                        next[focusedPartIndex] = v;
+                        setMultiInputs(next);
+                      }}
+                      disabled={isBusy}
+                    />
+                  )}
                 </div>
               ) : isFractionQ ? (
                 /* ── Fraction input with custom keyboard (Step 3) ── */

@@ -97,24 +97,9 @@ export const SCHEMA_SQL = `
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 
-  CREATE TABLE IF NOT EXISTS token_quotas (
-    parent_id INTEGER PRIMARY KEY,
-    total_tokens INTEGER NOT NULL DEFAULT 0,
-    used_tokens INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (parent_id) REFERENCES users(id)
-  );
-
-  CREATE TABLE IF NOT EXISTS token_usage_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    parent_id INTEGER,
-    action TEXT NOT NULL,
-    input_tokens INTEGER NOT NULL,
-    output_tokens INTEGER NOT NULL,
-    total_tokens INTEGER NOT NULL,
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (parent_id) REFERENCES token_quotas(parent_id)
+  CREATE TABLE IF NOT EXISTS user_limits (
+    user_id INTEGER PRIMARY KEY,
+    daily_generate_limit INTEGER NOT NULL DEFAULT 10,
+    FOREIGN KEY (user_id) REFERENCES users(id)
   );
 `;

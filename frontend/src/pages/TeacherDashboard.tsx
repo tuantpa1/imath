@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api, ApiError } from '../services/apiService';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -34,32 +34,15 @@ interface WrongAnswer {
 }
 
 interface UsageRow {
+  id: number;
   username: string;
   role: string;
   generate_exercises_used: number;
+  generate_exercises_limit: number;
   skip_question_used: number;
 }
 
-interface QuotaRow {
-  parent_id: number;
-  username: string;
-  display_name: string;
-  total_tokens: number;
-  used_tokens: number;
-  remaining: number;
-}
-
-interface HistoryRow {
-  id: number;
-  user_id: number;
-  action: string;
-  input_tokens: number;
-  output_tokens: number;
-  total_tokens: number;
-  created_at: string;
-}
-
-type Tab = 'overview' | 'students' | 'parents' | 'usage' | 'add' | 'quota';
+type Tab = 'overview' | 'students' | 'parents' | 'usage' | 'add' | 'generate-all';
 
 const TEACHER = '/teacher';
 
@@ -131,15 +114,19 @@ function StudentDetail({
   student,
   onClose,
   onStatusChange,
+  onDeleted,
 }: {
   student: Student;
   onClose: () => void;
   onStatusChange: (id: number, active: boolean) => void;
+  onDeleted: (id: number) => void;
 }) {
   const [scores, setScores] = useState<{ totalPoints: number } | null>(null);
   const [wrongAnswers, setWrongAnswers] = useState<WrongAnswer[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -153,6 +140,20 @@ function StudentDetail({
       })
       .catch(() => setLoading(false));
   }, [student.id]);
+
+  const handlePermanentDelete = async () => {
+    if (!window.confirm(`Xóa vĩnh viễn tài khoản "${student.display_name}"?\nToàn bộ dữ liệu sẽ bị xóa và không thể khôi phục!`)) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await api.delete(`${TEACHER}/users/${student.id}/permanent`);
+      onDeleted(student.id);
+      onClose();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Xóa thất bại');
+    }
+    setDeleting(false);
+  };
 
   const handleToggleActive = async () => {
     setToggling(true);
@@ -225,6 +226,16 @@ function StudentDetail({
           >
             {toggling ? '...' : student.is_active ? '🔒 Vô hiệu hoá tài khoản' : '✅ Kích hoạt lại'}
           </button>
+          <button
+            onClick={handlePermanentDelete}
+            disabled={deleting}
+            className="btn-scale w-full py-2.5 rounded-2xl font-extrabold text-sm shadow transition-all disabled:opacity-50 bg-red-600 hover:bg-red-700 text-white border border-red-700"
+          >
+            {deleting ? '...' : '🗑️ Xóa vĩnh viễn'}
+          </button>
+          {deleteError && (
+            <p className="text-rose-600 font-bold text-xs text-center">{deleteError}</p>
+          )}
         </div>
       )}
     </div>
@@ -237,7 +248,7 @@ function StudentsTab() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Student | null>(null);
   const [search, setSearch] = useState('');
-  const [showInactive, setShowInactive] = useState(false);
+  const [showInactive, setShowInactive] = useState(true);
 
   useEffect(() => {
     api.get<Student[]>(`${TEACHER}/students`)
@@ -248,6 +259,11 @@ function StudentsTab() {
   const handleStatusChange = (id: number, active: boolean) => {
     setStudents((prev) => prev.map((s) => s.id === id ? { ...s, is_active: active ? 1 : 0 } : s));
     setSelected((prev) => prev?.id === id ? { ...prev, is_active: active ? 1 : 0 } : prev);
+  };
+
+  const handleDeleted = (id: number) => {
+    setStudents((prev) => prev.filter((s) => s.id !== id));
+    setSelected(null);
   };
 
   if (loading) return <LoadingSpinner />;
@@ -267,6 +283,7 @@ function StudentsTab() {
           student={selected}
           onClose={() => setSelected(null)}
           onStatusChange={handleStatusChange}
+          onDeleted={handleDeleted}
         />
       )}
 
@@ -286,7 +303,7 @@ function StudentsTab() {
               : 'bg-white/30 border-white/30 text-white'
           }`}
         >
-          {showInactive ? '👁 Tất cả' : '👁 Ẩn VH'}
+          {showInactive ? '👁 Ẩn VH' : '👁 Hiện VH'}
         </button>
       </div>
 
@@ -336,6 +353,7 @@ function ParentsTab() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [toggling, setToggling] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
   const loadParents = () => {
     api.get<Parent[]>(`${TEACHER}/parents`)
@@ -358,6 +376,16 @@ function ParentsTab() {
       // ignore
     }
     setToggling(null);
+  };
+
+  const handlePermanentDelete = async (p: Parent) => {
+    if (!window.confirm(`Xóa vĩnh viễn tài khoản "${p.display_name}"?\nKhông thể khôi phục!`)) return;
+    setDeleting(p.id);
+    try {
+      await api.delete(`${TEACHER}/users/${p.id}/permanent`);
+      setParents((prev) => prev.filter((x) => x.id !== p.id));
+    } catch { /* ignore */ }
+    setDeleting(null);
   };
 
   if (loading) return <LoadingSpinner />;
@@ -410,6 +438,16 @@ function ParentsTab() {
                 >
                   {toggling === p.id ? '...' : p.is_active ? '🔒' : '✅'}
                 </button>
+                {!p.children && (
+                  <button
+                    onClick={() => handlePermanentDelete(p)}
+                    disabled={deleting === p.id}
+                    title="Xóa vĩnh viễn"
+                    className="btn-scale shrink-0 text-xs font-bold px-3 py-1.5 rounded-xl border transition-all disabled:opacity-50 bg-red-600 text-white border-red-700 hover:bg-red-700"
+                  >
+                    {deleting === p.id ? '...' : '🗑️'}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -424,6 +462,8 @@ function UsageTab() {
   const [rows, setRows] = useState<UsageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [limitInputs, setLimitInputs] = useState<Record<number, string>>({});
+  const [savingLimit, setSavingLimit] = useState<number | null>(null);
 
   const loadUsage = () => {
     setLoading(true);
@@ -434,8 +474,19 @@ function UsageTab() {
 
   useEffect(() => { loadUsage(); }, []);
 
-  const genLimit = (role: string) => role === 'teacher' ? 20 : role === 'parent' ? 10 : 0;
   const skipLimit = (role: string) => role === 'student' ? 20 : 0;
+
+  const handleSaveLimit = async (userId: number) => {
+    const val = parseInt(limitInputs[userId] ?? '', 10);
+    if (isNaN(val) || val < 0) return;
+    setSavingLimit(userId);
+    try {
+      await api.patch(`${TEACHER}/users/${userId}/limit`, { generateLimit: val });
+      setRows((prev) => prev.map((r) => r.id === userId ? { ...r, generate_exercises_limit: val } : r));
+      setLimitInputs((prev) => ({ ...prev, [userId]: '' }));
+    } catch { /* ignore */ }
+    setSavingLimit(null);
+  };
 
   const UsageBar = ({ used, limit }: { used: number; limit: number }) => {
     if (limit === 0) return <span className="text-gray-300 text-xs font-semibold">—</span>;
@@ -461,9 +512,9 @@ function UsageTab() {
   const parents = rows.filter((r) => r.role === 'parent');
   const students = rows.filter((r) => r.role === 'student');
   const groups = [
-    { label: '👩‍🏫 Giáo viên', items: teachers },
-    { label: '👨‍👩‍👧 Phụ huynh', items: parents },
-    { label: '👦 Học sinh', items: students },
+    { label: '👩‍🏫 Giáo viên', items: teachers, canEdit: true },
+    { label: '👨‍👩‍👧 Phụ huynh', items: parents, canEdit: true },
+    { label: '👦 Học sinh', items: students, canEdit: false },
   ];
 
   return (
@@ -499,27 +550,46 @@ function UsageTab() {
       </div>
 
       {/* Per-role breakdowns */}
-      {groups.map(({ label, items }) =>
+      {groups.map(({ label, items, canEdit }) =>
         items.length === 0 ? null : (
           <div key={label} className="bg-white rounded-3xl shadow-xl overflow-hidden border border-indigo-100">
             <div className="px-5 py-3 bg-indigo-50 border-b border-indigo-100">
               <p className="font-extrabold text-indigo-700 text-sm">{label}</p>
             </div>
             <div className="divide-y divide-gray-50">
-              {/* Column headers */}
-              <div className="grid grid-cols-[1fr_1fr_1fr] gap-3 px-5 py-2 bg-gray-50">
-                <span className="text-xs font-extrabold text-gray-400 uppercase tracking-wider">Tài khoản</span>
-                <span className="text-xs font-extrabold text-gray-400 uppercase tracking-wider">Tạo bài</span>
-                <span className="text-xs font-extrabold text-gray-400 uppercase tracking-wider">Đổi câu</span>
-              </div>
               {items.map((r) => (
-                <div key={r.username} className="grid grid-cols-[1fr_1fr_1fr] gap-3 items-center px-5 py-3">
-                  <div className="flex items-center gap-2 min-w-0">
+                <div key={r.id} className="px-5 py-3 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
                     <span className="shrink-0">{roleLabel[r.role]}</span>
-                    <span className="font-bold text-gray-800 text-sm truncate">{r.username}</span>
+                    <span className="font-bold text-gray-800 text-sm flex-1 truncate">{r.username}</span>
+                    {r.skip_question_used > 0 && (
+                      <span className="text-xs text-gray-400 shrink-0">đổi câu: {r.skip_question_used}/20</span>
+                    )}
                   </div>
-                  <UsageBar used={r.generate_exercises_used} limit={genLimit(r.role)} />
-                  <UsageBar used={r.skip_question_used} limit={skipLimit(r.role)} />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 shrink-0 w-16">Tạo bài:</span>
+                    <UsageBar used={r.generate_exercises_used} limit={r.generate_exercises_limit} />
+                  </div>
+                  {canEdit && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400 shrink-0 w-16">Giới hạn:</span>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder={String(r.generate_exercises_limit)}
+                        value={limitInputs[r.id] ?? ''}
+                        onChange={(e) => setLimitInputs((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                        className="flex-1 min-w-0 border border-indigo-200 rounded-xl py-1 px-2 text-xs font-bold text-center focus:border-indigo-500 focus:outline-none"
+                      />
+                      <button
+                        onClick={() => handleSaveLimit(r.id)}
+                        disabled={savingLimit === r.id || !limitInputs[r.id]}
+                        className="btn-scale shrink-0 text-xs font-bold px-3 py-1 rounded-xl bg-indigo-500 text-white disabled:opacity-40"
+                      >
+                        {savingLimit === r.id ? '...' : 'Lưu'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -712,180 +782,167 @@ function AddAccountTab() {
   );
 }
 
-// ── Quota tab ──────────────────────────────────────────────────────────────────
-function QuotaTab() {
-  const [quotas, setQuotas] = useState<QuotaRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [topupInputs, setTopupInputs] = useState<Record<number, string>>({});
-  const [quotaHistory, setQuotaHistory] = useState<HistoryRow[] | null>(null);
-  const [historyParentName, setHistoryParentName] = useState('');
-  const [working, setWorking] = useState<number | null>(null);
-  const [msg, setMsg] = useState('');
+// ── Generate-all tab ───────────────────────────────────────────────────────────
+function GenerateAllTab() {
+  const [files, setFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [countStr, setCountStr] = useState('10');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ studentCount: number; questionCount: number } | null>(null);
+  const [error, setError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadQuotas = () => {
+  const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
+  const applyFiles = (newFiles: File[]) => {
+    const valid: File[] = [];
+    for (const f of newFiles) {
+      if (!['image/jpeg', 'image/png'].includes(f.type)) continue;
+      if (f.size > MAX_FILE_SIZE) continue;
+      valid.push(f);
+    }
+    setFiles((prev) => [...prev, ...valid]);
+    setPreviewUrls((prev) => [...prev, ...valid.map((f) => URL.createObjectURL(f))]);
+    setResult(null);
+    setError('');
+  };
+
+  const removeFile = (i: number) => {
+    URL.revokeObjectURL(previewUrls[i]);
+    setFiles((prev) => prev.filter((_, j) => j !== i));
+    setPreviewUrls((prev) => prev.filter((_, j) => j !== i));
+  };
+
+  const handleGenerate = async () => {
+    if (files.length === 0) return;
     setLoading(true);
-    api.get<QuotaRow[]>(`${TEACHER}/quotas`)
-      .then((data) => { setQuotas(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => { loadQuotas(); }, []);
-
-  const handleTopup = async (parentId: number) => {
-    const tokens = parseInt(topupInputs[parentId] ?? '', 10);
-    if (!tokens || tokens <= 0) return;
-    setWorking(parentId);
-    setMsg('');
+    setError('');
+    setResult(null);
     try {
-      await api.post(`${TEACHER}/quotas/${parentId}/topup`, { tokens });
-      setMsg('✅ Đã nạp token!');
-      setTopupInputs((prev) => ({ ...prev, [parentId]: '' }));
-      loadQuotas();
-    } catch {
-      setMsg('❌ Lỗi khi nạp token');
+      const formData = new FormData();
+      files.forEach((f) => formData.append('images', f));
+      formData.append('count', String(parseInt(countStr, 10) || 10));
+      const data = await api.post<{ studentCount: number; questionCount: number }>(
+        '/api/generate-all',
+        formData
+      );
+      setResult(data);
+      // Reset files after success
+      previewUrls.forEach((u) => URL.revokeObjectURL(u));
+      setFiles([]);
+      setPreviewUrls([]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err instanceof Error ? err.message : 'Đã xảy ra lỗi'));
     }
-    setWorking(null);
+    setLoading(false);
   };
-
-  const handleHistory = async (parentId: number, name: string) => {
-    if (quotaHistory !== null && historyParentName === name) {
-      setQuotaHistory(null);
-      return;
-    }
-    setHistoryParentName(name);
-    const data = await api.get<HistoryRow[]>(`${TEACHER}/quotas/${parentId}/history`).catch(() => []);
-    setQuotaHistory(data);
-  };
-
-  const actionLabel: Record<string, string> = {
-    generate_exercises: 'Tạo bài',
-    generate_skip: 'Đổi câu',
-    generate_extra: 'Bài thêm',
-  };
-
-  if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <p className="text-white/70 text-xs font-semibold">Hạn mức token theo phụ huynh</p>
-        <button
-          onClick={loadQuotas}
-          className="btn-scale bg-white/20 hover:bg-white/30 text-white font-bold px-3 py-1.5 rounded-xl text-xs border border-white/30 backdrop-blur-sm"
-        >
-          🔄 Làm mới
-        </button>
-      </div>
-
-      {msg && (
-        <p className="text-center text-sm font-bold text-white bg-white/20 rounded-2xl px-4 py-2 border border-white/30">
-          {msg}
+    <div className="flex flex-col gap-5">
+      <div className="bg-white rounded-3xl shadow-xl p-5 border border-indigo-100">
+        <h3 className="font-extrabold text-indigo-700 text-base mb-1">📚 Tạo Bài Tập Cho Tất Cả Học Sinh</h3>
+        <p className="text-gray-400 text-xs mb-4 font-semibold">
+          Tải ảnh lên → AI tạo câu hỏi một lần → giao cho tất cả học sinh đang hoạt động.
+          Bài cũ chưa hoàn thành sẽ bị thay thế.
         </p>
-      )}
 
-      {quotas.length === 0 ? (
-        <div className="bg-white rounded-3xl shadow-xl p-8 text-center border border-amber-100">
-          <p className="text-4xl mb-2">👨‍👩‍👧</p>
-          <p className="text-gray-400 font-semibold">Chưa có phụ huynh nào</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-amber-100">
-          <div className="px-5 py-3.5 bg-amber-50 border-b border-amber-100">
-            <p className="font-extrabold text-amber-700 text-sm">🪙 Hạn Mức Token</p>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {quotas.map((q) => {
-              const pct = q.total_tokens > 0 ? Math.min(100, Math.round((q.used_tokens / q.total_tokens) * 100)) : 0;
-              const barColor = pct >= 90 ? 'bg-rose-400' : pct >= 70 ? 'bg-amber-400' : 'bg-green-400';
-              const unlimited = q.total_tokens === 0;
-
-              return (
-                <div key={q.parent_id} className="px-5 py-4 flex flex-col gap-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-bold text-gray-800 text-sm">{q.display_name}</p>
-                      <p className="text-xs text-gray-400">@{q.username}</p>
-                    </div>
-                    <button
-                      onClick={() => handleHistory(q.parent_id, q.display_name)}
-                      className="btn-scale text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-600 hover:bg-amber-100"
-                    >
-                      📋 Lịch sử
-                    </button>
-                  </div>
-
-                  {unlimited ? (
-                    <p className="text-xs font-semibold text-gray-400">♾️ Không giới hạn (chưa cài quota)</p>
-                  ) : (
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="text-xs font-extrabold text-gray-600 shrink-0">
-                          {q.used_tokens.toLocaleString()} / {q.total_tokens.toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-400 font-semibold">
-                        Còn lại: <span className={`font-extrabold ${q.remaining === 0 ? 'text-rose-500' : 'text-green-600'}`}>{q.remaining.toLocaleString()} token</span>
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      placeholder="Số token nạp thêm..."
-                      value={topupInputs[q.parent_id] ?? ''}
-                      onChange={(e) => setTopupInputs((prev) => ({ ...prev, [q.parent_id]: e.target.value }))}
-                      className="flex-1 min-w-0 border-2 border-amber-200 rounded-xl py-2 px-3 font-bold text-sm focus:border-amber-400 focus:outline-none bg-white"
-                    />
-                    <button
-                      onClick={() => handleTopup(q.parent_id)}
-                      disabled={working === q.parent_id || !topupInputs[q.parent_id]}
-                      className="btn-scale shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-white font-extrabold text-sm shadow disabled:opacity-50"
-                    >
-                      {working === q.parent_id ? '...' : 'Nạp thêm'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {quotaHistory !== null && (
-        <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-amber-100">
-          <div className="px-5 py-3.5 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
-            <p className="font-extrabold text-amber-700 text-sm">📋 Lịch sử: {historyParentName}</p>
-            <button onClick={() => setQuotaHistory(null)} className="text-gray-400 hover:text-gray-600 font-extrabold text-lg">✕</button>
-          </div>
-          {quotaHistory.length === 0 ? (
-            <p className="text-center text-gray-400 py-6 font-semibold">Chưa có lịch sử</p>
+        {/* Drop zone */}
+        <div
+          onDrop={(e) => { e.preventDefault(); setIsDragging(false); applyFiles(Array.from(e.dataTransfer.files)); }}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onClick={() => fileInputRef.current?.click()}
+          className={`border-4 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all duration-200 mb-4 ${
+            isDragging
+              ? 'border-indigo-500 bg-indigo-50 scale-[1.02]'
+              : 'border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50'
+          }`}
+        >
+          {files.length === 0 ? (
+            <>
+              <div className="text-4xl mb-2">☁️</div>
+              <p className="font-extrabold text-indigo-600">Kéo ảnh vào đây</p>
+              <p className="text-gray-400 text-sm mt-1">hoặc nhấn để chọn file (JPG/PNG)</p>
+            </>
           ) : (
-            <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
-              {quotaHistory.map((h) => (
-                <li key={h.id} className="px-5 py-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-bold text-gray-700 text-sm">{actionLabel[h.action] ?? h.action}</p>
-                    <p className="text-xs text-gray-400">{h.created_at}</p>
+            <>
+              <div className="grid grid-cols-3 gap-2 mb-2" onClick={(e) => e.stopPropagation()}>
+                {previewUrls.map((url, i) => (
+                  <div key={i} className="relative rounded-xl overflow-hidden shadow">
+                    <img src={url} alt="" className="w-full h-20 object-cover" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeFile(i); }}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-black"
+                    >✕</button>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="font-extrabold text-amber-600 text-sm">−{h.total_tokens.toLocaleString()} token</p>
-                    <p className="text-xs text-gray-400">{h.input_tokens}↑ {h.output_tokens}↓</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                ))}
+              </div>
+              <p className="text-indigo-500 font-bold text-sm">{files.length} ảnh đã chọn — nhấn để thêm</p>
+            </>
           )}
         </div>
-      )}
 
-      <p className="text-center text-white/50 text-xs font-semibold pb-2">
-        Quota không reset theo ngày — dùng đến hết
-      </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png"
+          multiple
+          className="hidden"
+          onChange={(e) => { applyFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+        />
+
+        {/* Question count */}
+        <div className="flex items-center gap-3 mb-4">
+          <label className="font-extrabold text-gray-700 text-sm shrink-0">Số câu hỏi:</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={countStr}
+            onChange={(e) => setCountStr(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={() => {
+              const v = parseInt(countStr, 10);
+              if (isNaN(v) || v < 5) setCountStr('5');
+              else if (v > 30) setCountStr('30');
+              else setCountStr(String(v));
+            }}
+            className="w-20 text-center text-lg font-extrabold border-2 border-indigo-200 rounded-xl py-1 focus:border-indigo-500 focus:outline-none transition-all"
+          />
+          <span className="text-gray-400 text-xs font-semibold">(5–30 câu)</span>
+        </div>
+
+        {error && (
+          <div className="mb-4 bg-rose-50 border border-rose-200 rounded-2xl p-3 text-rose-600 font-bold text-sm text-center">
+            ⚠️ {error}
+          </div>
+        )}
+
+        {result && (
+          <div className="mb-4 bg-green-50 border border-green-200 rounded-2xl p-4 text-center animate-bounce-in">
+            <p className="text-2xl mb-1">🎉</p>
+            <p className="font-extrabold text-green-700">Đã giao bài thành công!</p>
+            <p className="text-green-600 text-sm font-semibold mt-1">
+              {result.questionCount} câu hỏi → {result.studentCount} học sinh
+            </p>
+          </div>
+        )}
+
+        <button
+          onClick={() => { void handleGenerate(); }}
+          disabled={files.length === 0 || loading}
+          className="btn-scale w-full py-4 rounded-3xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-lg shadow-xl border border-indigo-400 transition-all"
+        >
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="animate-spin inline-block">⭐</span>
+              Đang tạo bài tập...
+            </span>
+          ) : (
+            '✨ Tạo và giao cho tất cả học sinh'
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -904,7 +961,7 @@ export default function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
     { id: 'parents', label: 'PH', icon: '👨‍👩‍👧' },
     { id: 'usage', label: 'Dùng API', icon: '📈' },
     { id: 'add', label: 'Thêm TK', icon: '➕' },
-    { id: 'quota', label: 'Quota', icon: '🪙' },
+    { id: 'generate-all', label: 'Giao bài', icon: '📚' },
   ];
 
   return (
@@ -950,7 +1007,7 @@ export default function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
         {tab === 'parents' && <ParentsTab />}
         {tab === 'usage' && <UsageTab />}
         {tab === 'add' && <AddAccountTab />}
-        {tab === 'quota' && <QuotaTab />}
+        {tab === 'generate-all' && <GenerateAllTab />}
       </main>
     </div>
   );

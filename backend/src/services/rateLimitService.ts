@@ -53,3 +53,18 @@ export function getAllUsageToday(): Array<{ user_id: number; action: string; cou
     'SELECT user_id, action, count FROM api_usage WHERE date = ?'
   ).all(date) as Array<{ user_id: number; action: string; count: number }>;
 }
+
+const DEFAULT_LIMITS: Record<string, number> = { teacher: 20, parent: 10, student: 0 };
+
+export function getUserGenerateLimit(userId: number, role: string): number {
+  const row = db.prepare(
+    'SELECT daily_generate_limit FROM user_limits WHERE user_id = ?'
+  ).get(userId) as { daily_generate_limit: number } | undefined;
+  return row?.daily_generate_limit ?? DEFAULT_LIMITS[role] ?? 10;
+}
+
+export const setUserGenerateLimit = db.transaction((userId: number, limit: number): void => {
+  db.prepare(
+    'INSERT INTO user_limits (user_id, daily_generate_limit) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET daily_generate_limit = excluded.daily_generate_limit'
+  ).run(userId, limit);
+});

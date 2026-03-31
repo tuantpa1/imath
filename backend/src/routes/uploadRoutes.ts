@@ -4,11 +4,10 @@ import path from 'path';
 import fs from 'fs';
 import { generateExercises, generateSkip } from '../services/aiService';
 import type { ValidMime } from '../services/claudeService';
-import { createSession } from '../services/storageServiceSQLite';
+import { createSession, createSessionForAllStudents } from '../services/storageServiceSQLite';
 import type { AuthRequest } from '../middleware/authMiddleware';
 import { resolveStudentId } from '../middleware/resolveStudent';
-import { checkAndIncrement, RateLimitError } from '../services/rateLimitService';
-import { getGroupParentId, checkQuota, deductTokens } from '../services/tokenQuotaService';
+import { checkAndIncrement, RateLimitError, getUserGenerateLimit } from '../services/rateLimitService';
 
 const router = Router();
 
@@ -50,13 +49,7 @@ router.post('/generate-exercises', upload.array('images', 10), async (req: Reque
     return;
   }
 
-  const parentId = getGroupParentId(authReq.user.userId, authReq.user.role);
-  if (!checkQuota(parentId)) {
-    res.status(402).json({ error: 'Hết hạn mức token. Liên hệ giáo viên để nạp thêm.' });
-    return;
-  }
-
-  const limit = authReq.user.role === 'teacher' ? 20 : 10;
+  const limit = getUserGenerateLimit(authReq.user.userId, authReq.user.role);
   try {
     checkAndIncrement(authReq.user.userId, 'generate_exercises', limit);
   } catch (err) {
@@ -87,8 +80,7 @@ router.post('/generate-exercises', upload.array('images', 10), async (req: Reque
   );
 
   try {
-    const { questions: rawQuestions, usage } = await generateExercises(images, count);
-    deductTokens(authReq.user.userId, parentId, 'generate_exercises', usage);
+    const { questions: rawQuestions } = await generateExercises(images, count);
     const session = createSession(studentId, authReq.user.userId, imagePaths, rawQuestions, false);
     res.json({ ok: true, questions: rawQuestions, session, imagePaths });
   } catch (err) {
@@ -100,12 +92,6 @@ router.post('/generate-exercises', upload.array('images', 10), async (req: Reque
 
 router.post('/generate-skip', async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
-
-  const parentId = getGroupParentId(authReq.user.userId, authReq.user.role);
-  if (!checkQuota(parentId)) {
-    res.status(402).json({ error: 'Hết hạn mức token. Liên hệ giáo viên để nạp thêm.' });
-    return;
-  }
 
   if (authReq.user.role === 'student') {
     try {
@@ -136,7 +122,7 @@ router.post('/generate-skip', async (req: Request, res: Response) => {
     return;
   }
   try {
-    const { question, usage } = await generateSkip(
+    const { question } = await generateSkip(
       originalQuestion,
       type,
       difficulty ?? 'easy',
@@ -144,7 +130,6 @@ router.post('/generate-skip', async (req: Request, res: Response) => {
       orderMatters ?? true,
       answersCount ?? 2
     );
-    deductTokens(authReq.user.userId, parentId, 'generate_skip', usage);
     res.json({ ok: true, question });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -155,12 +140,6 @@ router.post('/generate-skip', async (req: Request, res: Response) => {
 
 router.post('/generate-extra', async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
-
-  const parentId = getGroupParentId(authReq.user.userId, authReq.user.role);
-  if (!checkQuota(parentId)) {
-    res.status(402).json({ error: 'Hết hạn mức token. Liên hệ giáo viên để nạp thêm.' });
-    return;
-  }
 
   const studentId = resolveStudentId(authReq, res);
   if (studentId === null) return;
@@ -187,14 +166,58 @@ router.post('/generate-extra', async (req: Request, res: Response) => {
     });
 
     const numCount = parseInt(String(count ?? '10'), 10) || 10;
-    const { questions: rawQuestions, usage } = await generateExercises(images, numCount, previousQuestions ?? []);
-    deductTokens(authReq.user.userId, parentId, 'generate_extra', usage);
+    const { questions: rawQuestions } = await generateExercises(images, numCount, previousQuestions ?? []);
     const session = createSession(studentId, authReq.user.userId, imagePaths, rawQuestions, true);
     res.json({ ok: true, session });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('generateExtra error:', message);
     res.status(500).json({ error: 'Failed to generate extra exercises', detail: message });
+  }
+});
+
+router.post('/generate-all', upload.array('images', 10), async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+
+  if (authReq.user.role !== 'teacher') {
+    res.status(403).json({ error: 'Forbidden: only teachers can generate for all students' });
+    return;
+  }
+
+  const limit = getUserGenerateLimit(authReq.user.userId, authReq.user.role);
+  try {
+    checkAndIncrement(authReq.user.userId, 'generate_exercises', limit);
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      res.status(429).json({
+        error: 'Đã đạt giới hạn tạo bài tập hôm nay',
+        limit: err.limit,
+        used: err.used,
+        resetsAt: '00:00 ngày mai (UTC+7)',
+      });
+      return;
+    }
+    throw err;
+  }
+
+  const files = req.files as Express.Multer.File[] | undefined;
+  if (!files || files.length === 0) {
+    res.status(400).json({ error: 'No image files uploaded' });
+    return;
+  }
+
+  const count = parseInt(String(req.body.count ?? '10'), 10) || 10;
+  const images = files.map(fileToImageEntry);
+  const imagePaths = files.map((f) => path.relative(PROJECT_ROOT, f.path).replace(/\\/g, '/'));
+
+  try {
+    const { questions: rawQuestions } = await generateExercises(images, count);
+    const studentCount = createSessionForAllStudents(authReq.user.userId, imagePaths, rawQuestions);
+    res.json({ ok: true, studentCount, questionCount: rawQuestions.length });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('generateAll error:', message);
+    res.status(500).json({ error: 'Failed to generate exercises', detail: message });
   }
 });
 

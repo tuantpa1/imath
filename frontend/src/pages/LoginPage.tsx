@@ -93,16 +93,6 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </button>
           </form>
         </div>
-
-        {/* Role hint */}
-        <div className="bg-white/20 backdrop-blur-sm rounded-2xl px-5 py-3 border border-white/30 text-center w-full">
-          <p className="text-white font-bold text-xs mb-2">Tài khoản mặc định:</p>
-          <div className="flex flex-col gap-1 text-white/90 text-xs font-semibold">
-            <p>🎓 Giáo viên: <span className="font-extrabold">teacher</span> / teacher123</p>
-            <p>👨‍👩‍👧 Phụ huynh: <span className="font-extrabold">parent1</span> / parent123</p>
-            <p>🐨 Học sinh: <span className="font-extrabold">student1</span> / student123</p>
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -52,7 +52,7 @@ interface ScoresData {
   wrongQuestions: WrongQuestion[];
 }
 
-type ParentView = 'dashboard' | 'upload' | 'scores';
+type ParentView = 'dashboard' | 'upload' | 'scores' | 'questions';
 type UploadState = 'idle' | 'loading' | 'success' | 'error';
 
 interface ParentModeProps {
@@ -242,6 +242,111 @@ function SuccessView({
       <button
         onClick={onBack}
         className="text-white/70 font-bold text-sm hover:text-white transition-colors text-center"
+      >
+        ← Về trang chính
+      </button>
+    </div>
+  );
+}
+
+// ── Questions view ─────────────────────────────────────────────────────────────
+function QuestionsView({ onBack, studentId }: { onBack: () => void; studentId: number }) {
+  const [questions, setQuestions] = useState<GeneratedQuestion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get<{ sessions: { questions: GeneratedQuestion[]; completed?: boolean }[] }>(`/api/exercises?studentId=${studentId}`)
+      .then((data) => {
+        const sessions = data.sessions ?? [];
+        // Show questions from the latest incomplete session, fallback to latest session
+        const active = [...sessions].reverse().find((s) => !s.completed) ?? sessions[sessions.length - 1];
+        setQuestions(active?.questions ?? []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [studentId]);
+
+  const handleDelete = async (q: GeneratedQuestion) => {
+    if (!q.id) return;
+    if (!window.confirm('Xóa câu hỏi này?')) return;
+    setDeletingId(q.id);
+    try {
+      await api.delete(`/api/questions/${q.id}`);
+      setQuestions((prev) => prev.filter((x) => x.id !== q.id));
+    } catch { /* ignore */ }
+    setDeletingId(null);
+  };
+
+  const typeEmoji: Record<string, string> = {
+    addition: '➕', subtraction: '➖', multiplication: '✖️',
+    division: '➗', word_problem: '📝', fraction: '½', multi_answer: '📋',
+  };
+
+  const diffStyle: Record<string, string> = {
+    easy: 'bg-green-100 text-green-700 border border-green-200',
+    medium: 'bg-amber-100 text-amber-700 border border-amber-200',
+    hard: 'bg-rose-100 text-rose-700 border border-rose-200',
+  };
+
+  return (
+    <div className="w-full max-w-lg flex flex-col gap-4 animate-fade-in">
+      <div className="bg-white rounded-3xl shadow-xl overflow-hidden border border-purple-100">
+        <div className="px-5 py-3.5 bg-purple-50 border-b border-purple-100 flex items-center justify-between">
+          <p className="font-extrabold text-purple-700 text-sm">📋 Câu hỏi hiện tại</p>
+          {!loading && <span className="text-xs text-gray-400 font-semibold">{questions.length} câu</span>}
+        </div>
+        {loading ? (
+          <div className="py-10 flex justify-center">
+            <span className="text-3xl animate-spin">⭐</span>
+          </div>
+        ) : questions.length === 0 ? (
+          <div className="px-5 py-10 text-center">
+            <p className="text-3xl mb-2">📭</p>
+            <p className="text-gray-400 font-semibold">Chưa có câu hỏi nào</p>
+            <p className="text-gray-300 text-sm mt-1">Tải ảnh lên để tạo bài tập mới.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-gray-50 max-h-[60vh] overflow-y-auto">
+            {questions.map((q, i) => {
+              const answerDisplay = q.type === 'multi_answer' && q.answers
+                ? q.answers.map(a => `${a.label}: ${a.answer_text ?? a.answer ?? '?'}${a.unit ? ' ' + a.unit : ''}`).join(' | ')
+                : q.type === 'fraction'
+                ? (q.answer_text || 'N/A')
+                : `${q.answer ?? ''}${q.unit ? ` ${q.unit}` : ''}`;
+              return (
+                <li key={q.id ?? i} className="flex items-start gap-2 px-4 py-3 hover:bg-gray-50 transition-colors">
+                  <span className="text-xl mt-0.5 shrink-0">{typeEmoji[q.type] ?? '❓'}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-800 text-sm leading-snug">{q.question}</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Đáp án: <span className="font-extrabold text-purple-600">{answerDisplay}</span>
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${diffStyle[q.difficulty] ?? 'bg-gray-100 text-gray-500'}`}>
+                      {q.difficulty}
+                    </span>
+                    {q.id && (
+                      <button
+                        onClick={() => handleDelete(q)}
+                        disabled={deletingId === q.id}
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-300 hover:text-rose-500 transition-colors disabled:opacity-30"
+                      >
+                        {deletingId === q.id ? '⏳' : '🗑️'}
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      <button
+        onClick={onBack}
+        className="text-white/70 font-bold text-sm hover:text-white transition-colors text-center pb-2"
       >
         ← Về trang chính
       </button>
@@ -483,9 +588,6 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
   const [childList, setChildList] = useState<Child[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
   const [genUsage, setGenUsage] = useState<{ used: number; limit: number; remaining: number } | null>(null);
-  const [tokenQuota, setTokenQuota] = useState<{
-    total_tokens: number; used_tokens: number; remaining: number; unlimited: boolean;
-  } | null>(null);
 
   useEffect(() => {
     api.get<Child[]>('/parent/children')
@@ -500,7 +602,6 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
     api.get<{ generate_exercises: { used: number; limit: number; remaining: number } }>('/api/usage')
       .then((data) => setGenUsage(data.generate_exercises))
       .catch(() => {});
-    api.get('/parent/quota').then((data) => setTokenQuota(data as typeof tokenQuota)).catch(() => {});
   }, []);
 
   const applyFiles = (newFiles: File[]) => {
@@ -572,7 +673,6 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
       setQuestions(rawQuestions);
       setUploadState('success');
       setGenUsage((prev) => prev ? { ...prev, used: prev.used + 1, remaining: prev.remaining - 1 } : prev);
-      api.get('/parent/quota').then((data) => setTokenQuota(data as typeof tokenQuota)).catch(() => {});
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : 'Đã xảy ra lỗi, vui lòng thử lại.');
       setErrorMsg(msg);
@@ -625,6 +725,14 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
                 </button>
 
                 <button
+                  onClick={() => setView('questions')}
+                  className="btn-scale w-full py-5 rounded-3xl bg-gradient-to-r from-purple-400 to-violet-500 text-white font-extrabold text-lg shadow-xl border border-purple-300 flex items-center justify-center gap-3"
+                >
+                  <span className="text-2xl">📋</span>
+                  <span>Xem Câu Hỏi</span>
+                </button>
+
+                <button
                   onClick={() => setView('scores')}
                   className="btn-scale w-full py-5 rounded-3xl bg-gradient-to-r from-green-400 to-teal-500 text-white font-extrabold text-lg shadow-xl border border-green-300 flex items-center justify-center gap-3"
                 >
@@ -652,6 +760,25 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
         <main className="flex-1 flex flex-col items-center px-4 py-5 gap-4 overflow-y-auto">
           {selectedChildId !== null && (
             <ScoresView onBack={() => setView('dashboard')} studentId={selectedChildId} />
+          )}
+        </main>
+      </div>
+    );
+  }
+
+  // ── Questions view ───────────────────────────────────────────────────────────
+  if (view === 'questions') {
+    return (
+      <div className={bgClass}>
+        <Header
+          onExitToStudent={onExitToStudent}
+          children={childList}
+          selectedChildId={selectedChildId}
+          onChildChange={(id) => { setSelectedChildId(id); }}
+        />
+        <main className="flex-1 flex flex-col items-center px-4 py-5 gap-4 overflow-y-auto">
+          {selectedChildId !== null && (
+            <QuestionsView onBack={() => setView('dashboard')} studentId={selectedChildId} />
           )}
         </main>
       </div>
@@ -782,34 +909,12 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
               </div>
             )}
 
-            {/* Token quota indicator */}
-            {tokenQuota && !tokenQuota.unlimited && (
-              <div className={`rounded-2xl px-4 py-3 border text-sm font-semibold ${
-                tokenQuota.remaining === 0
-                  ? 'bg-rose-50 border-rose-200 text-rose-600'
-                  : tokenQuota.remaining < tokenQuota.total_tokens * 0.2
-                  ? 'bg-amber-50 border-amber-200 text-amber-700'
-                  : 'bg-violet-50 border-violet-200 text-violet-700'
-              }`}>
-                {tokenQuota.remaining === 0 ? (
-                  <p>🚫 Hết token! Liên hệ giáo viên để nạp thêm.</p>
-                ) : (
-                  <>
-                    <p>🪙 Token còn lại: <span className="font-extrabold">{tokenQuota.remaining.toLocaleString()}</span> / {tokenQuota.total_tokens.toLocaleString()}</p>
-                    {tokenQuota.remaining < tokenQuota.total_tokens * 0.2 && (
-                      <p className="mt-1">⚠️ Sắp hết token, liên hệ giáo viên!</p>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
             {/* Generate button */}
             <button
               onClick={handleGenerate}
-              disabled={files.length === 0 || uploadState === 'loading' || selectedChildId === null || genUsage?.remaining === 0 || (tokenQuota?.remaining === 0 && !tokenQuota?.unlimited)}
+              disabled={files.length === 0 || uploadState === 'loading' || selectedChildId === null || genUsage?.remaining === 0}
               className={`btn-scale w-full py-5 rounded-3xl font-extrabold text-xl text-white shadow-xl transition-all border ${
-                files.length > 0 && uploadState !== 'loading' && selectedChildId !== null && genUsage?.remaining !== 0 && !(tokenQuota?.remaining === 0 && !tokenQuota?.unlimited)
+                files.length > 0 && uploadState !== 'loading' && selectedChildId !== null && genUsage?.remaining !== 0
                   ? 'bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 border-purple-400'
                   : 'bg-gray-300 cursor-not-allowed border-gray-200'
               }`}

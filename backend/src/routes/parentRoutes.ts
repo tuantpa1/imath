@@ -3,7 +3,6 @@ import { db } from '../database/db';
 import { requireRole } from '../middleware/roleMiddleware';
 import type { AuthRequest } from '../middleware/authMiddleware';
 import { readScores, getTotalPoints, redeemPoints } from '../services/storageServiceSQLite';
-import { getQuota } from '../services/tokenQuotaService';
 
 const router = Router();
 router.use(requireRole('parent'));
@@ -57,17 +56,6 @@ router.post('/children/:id/redeem', (req: Request, res: Response) => {
 
   redeemPoints(studentId, points, parentId);
   res.json({ ok: true, remaining: available - points });
-});
-
-// GET /parent/quota — this parent's token quota
-router.get('/quota', (req: Request, res: Response) => {
-  const parentId = (req as AuthRequest).user.userId;
-  const quota = getQuota(parentId);
-  if (!quota) {
-    res.json({ total_tokens: 0, used_tokens: 0, remaining: 0, unlimited: true });
-    return;
-  }
-  res.json({ ...quota, unlimited: false });
 });
 
 export default router;

@@ -3,8 +3,7 @@ import { db } from '../database/db';
 import { requireRole } from '../middleware/roleMiddleware';
 import { readScores, getTotalPoints } from '../services/storageServiceSQLite';
 import { hashPassword } from '../services/authService';
-import { getAllUsageToday } from '../services/rateLimitService';
-import { getAllQuotas, topUpTokens, setQuota, getUsageHistory } from '../services/tokenQuotaService';
+import { getAllUsageToday, getUserGenerateLimit, setUserGenerateLimit } from '../services/rateLimitService';
 
 const router = Router();
 router.use(requireRole('teacher'));
@@ -116,13 +115,6 @@ router.post('/students', async (req: Request, res: Response) => {
       db.prepare('INSERT OR IGNORE INTO family_links (parent_id, student_id) VALUES (?, ?)').run(newId, linkToStudentId);
     }
 
-    // Auto-create unlimited quota row for new parent (prevents FOREIGN KEY errors in token_usage_log)
-    if (role === 'parent') {
-      db.prepare(
-        'INSERT OR IGNORE INTO token_quotas (parent_id, total_tokens, used_tokens) VALUES (?, 999999999, 0)'
-      ).run(newId);
-    }
-
     res.json({ ok: true, id: newId });
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') {
@@ -159,6 +151,47 @@ router.delete('/users/:id', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+// DELETE /teacher/users/:id/permanent — hard-delete a student or empty parent
+router.delete('/users/:id/permanent', (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+
+  const user = db.prepare("SELECT role FROM users WHERE id = ? AND role IN ('student','parent')").get(id) as { role: string } | undefined;
+  if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+
+  if (user.role === 'parent') {
+    const linked = db.prepare('SELECT COUNT(*) AS n FROM family_links WHERE parent_id = ?').get(id) as { n: number };
+    if (linked.n > 0) {
+      res.status(400).json({ error: 'Không thể xóa phụ huynh còn liên kết với học sinh' });
+      return;
+    }
+  }
+
+  db.transaction(() => {
+    if (user.role === 'student') {
+      db.prepare('DELETE FROM wrong_answers WHERE student_id = ?').run(id);
+      db.prepare('DELETE FROM score_history WHERE student_id = ?').run(id);
+      db.prepare('DELETE FROM redemptions WHERE student_id = ?').run(id);
+      db.prepare('DELETE FROM scores WHERE student_id = ?').run(id);
+      // questions before sessions (FK: questions.session_id → sessions.id)
+      db.prepare('DELETE FROM questions WHERE session_id IN (SELECT id FROM sessions WHERE student_id = ? OR created_by = ?)').run(id, id);
+      db.prepare('DELETE FROM sessions WHERE student_id = ? OR created_by = ?').run(id, id);
+      db.prepare('DELETE FROM family_links WHERE student_id = ?').run(id);
+    } else {
+      // parent: handle redemptions and any sessions they created
+      db.prepare('DELETE FROM redemptions WHERE redeemed_by = ?').run(id);
+      db.prepare('DELETE FROM questions WHERE session_id IN (SELECT id FROM sessions WHERE created_by = ?)').run(id);
+      db.prepare('DELETE FROM sessions WHERE created_by = ?').run(id);
+      db.prepare('DELETE FROM family_links WHERE parent_id = ?').run(id);
+    }
+    db.prepare('DELETE FROM api_usage WHERE user_id = ?').run(id);
+    db.prepare('DELETE FROM user_limits WHERE user_id = ?').run(id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  })();
+
+  res.json({ ok: true });
+});
+
 // PATCH /teacher/users/:id/reactivate — restore a deactivated user
 router.patch('/users/:id/reactivate', (req: Request, res: Response) => {
   const id = Number(req.params.id);
@@ -183,56 +216,28 @@ router.get('/usage', (_req: Request, res: Response) => {
   }
 
   const result = users.map((u) => ({
+    id: u.id,
     username: u.username,
     role: u.role,
     generate_exercises_used: usageMap.get(`${u.id}:generate_exercises`) ?? 0,
+    generate_exercises_limit: getUserGenerateLimit(u.id, u.role),
     skip_question_used: usageMap.get(`${u.id}:skip_question`) ?? 0,
   }));
 
   res.json(result);
 });
 
-// GET /teacher/quotas — all parents with quota info
-router.get('/quotas', (_req: Request, res: Response) => {
-  res.json(getAllQuotas());
-});
-
-// POST /teacher/quotas/:parentId/topup — add tokens to a parent's quota
-router.post('/quotas/:parentId/topup', (req: Request, res: Response) => {
-  const parentId = Number(req.params.parentId);
-  if (isNaN(parentId)) { res.status(400).json({ error: 'Invalid parentId' }); return; }
-  const { tokens } = req.body as { tokens?: number };
-  if (!tokens || tokens <= 0) { res.status(400).json({ error: 'tokens must be > 0' }); return; }
-  try {
-    const result = topUpTokens(parentId, tokens);
-    res.json(result);
-  } catch {
-    res.status(500).json({ error: 'Failed to top up tokens' });
-  }
-});
-
-// POST /teacher/quotas/:parentId/set — set absolute quota (resets used_tokens)
-router.post('/quotas/:parentId/set', (req: Request, res: Response) => {
-  const parentId = Number(req.params.parentId);
-  if (isNaN(parentId)) { res.status(400).json({ error: 'Invalid parentId' }); return; }
-  const { tokens } = req.body as { tokens?: number };
-  if (tokens === undefined || tokens === null || tokens < 0) {
-    res.status(400).json({ error: 'tokens must be >= 0' });
+// PATCH /teacher/users/:id/limit — set daily generate limit for a user
+router.patch('/users/:id/limit', (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid id' }); return; }
+  const { generateLimit } = req.body as { generateLimit?: number };
+  if (generateLimit === undefined || generateLimit < 0) {
+    res.status(400).json({ error: 'generateLimit must be >= 0' });
     return;
   }
-  try {
-    const result = setQuota(parentId, tokens);
-    res.json(result);
-  } catch {
-    res.status(500).json({ error: 'Failed to set quota' });
-  }
-});
-
-// GET /teacher/quotas/:parentId/history — recent token usage for a parent
-router.get('/quotas/:parentId/history', (req: Request, res: Response) => {
-  const parentId = Number(req.params.parentId);
-  if (isNaN(parentId)) { res.status(400).json({ error: 'Invalid parentId' }); return; }
-  res.json(getUsageHistory(parentId));
+  setUserGenerateLimit(id, generateLimit);
+  res.json({ ok: true, generateLimit });
 });
 
 export default router;
