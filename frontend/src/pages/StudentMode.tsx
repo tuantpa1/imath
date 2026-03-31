@@ -158,8 +158,8 @@ function FractionKeyboard({
       return;
     }
     if (key === '/') {
-      if (hasSlash || !value) return; // max 1 slash; must have numerator first
-      onChange(value + '/');
+      if (hasSlash) return; // max 1 slash
+      onChange((value || '0') + '/'); // auto-insert 0 if empty
       return;
     }
     onChange(value + key);
@@ -174,7 +174,7 @@ function FractionKeyboard({
           key={k}
           type="button"
           onPointerDown={(e) => { e.preventDefault(); handleKey(k); }}
-          disabled={disabled || (k === '/' && (hasSlash || !value))}
+          disabled={disabled || (k === '/' && hasSlash)}
           className={`py-4 rounded-2xl font-extrabold text-xl shadow-md transition-all active:scale-95 select-none
             ${k === '/' ? 'bg-violet-500 text-white disabled:opacity-30' :
               k === '⌫' ? 'bg-rose-100 text-rose-600 border-2 border-rose-200' :
