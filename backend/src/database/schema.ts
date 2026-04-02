@@ -3,7 +3,7 @@ export const SCHEMA_SQL = `
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK(role IN ('teacher','parent','student')),
+    role TEXT NOT NULL CHECK(role IN ('admin','teacher','parent','student')),
     display_name TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now')),
     is_active INTEGER DEFAULT 1
@@ -27,6 +27,7 @@ export const SCHEMA_SQL = `
     question_count INTEGER DEFAULT 0,
     is_extra INTEGER DEFAULT 0,
     completed INTEGER DEFAULT 0,
+    superseded INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (created_by) REFERENCES users(id),
     FOREIGN KEY (student_id) REFERENCES users(id)
   );
@@ -101,5 +102,14 @@ export const SCHEMA_SQL = `
     user_id INTEGER PRIMARY KEY,
     daily_generate_limit INTEGER NOT NULL DEFAULT 10,
     FOREIGN KEY (user_id) REFERENCES users(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS teacher_students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    teacher_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL UNIQUE,
+    assigned_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (teacher_id) REFERENCES users(id),
+    FOREIGN KEY (student_id) REFERENCES users(id)
   );
 `;

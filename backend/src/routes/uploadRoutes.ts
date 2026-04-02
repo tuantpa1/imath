@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { generateExercises, generateSkip } from '../services/aiService';
 import type { ValidMime } from '../services/claudeService';
-import { createSession, createSessionForAllStudents } from '../services/storageServiceSQLite';
+import { createSession, createSessionForAllStudents, getTeacherStudentIds, distributeSessionToStudents, hasIncompleteTeacherSession } from '../services/storageServiceSQLite';
 import type { AuthRequest } from '../middleware/authMiddleware';
 import { resolveStudentId } from '../middleware/resolveStudent';
 import { checkAndIncrement, RateLimitError, getUserGenerateLimit } from '../services/rateLimitService';
@@ -44,8 +44,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 router.post('/generate-exercises', upload.array('images', 10), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
 
-  if (authReq.user.role === 'student') {
-    res.status(403).json({ error: 'Forbidden: students cannot generate exercises' });
+  if (!['teacher', 'parent'].includes(authReq.user.role)) {
+    res.status(403).json({ error: 'Chỉ giáo viên hoặc phụ huynh mới có thể tạo bài tập' });
     return;
   }
 
@@ -67,6 +67,12 @@ router.post('/generate-exercises', upload.array('images', 10), async (req: Reque
 
   const studentId = resolveStudentId(authReq, res);
   if (studentId === null) return;
+
+  if (authReq.user.role === 'parent' && hasIncompleteTeacherSession(studentId)) {
+    res.status(400).json({ error: 'Con đang có bài tập từ giáo viên, hãy để bé làm xong trước khi thêm bài mới.' });
+    return;
+  }
+
   const files = req.files as Express.Multer.File[] | undefined;
   if (!files || files.length === 0) {
     res.status(400).json({ error: 'No image files uploaded' });
@@ -210,14 +216,98 @@ router.post('/generate-all', upload.array('images', 10), async (req: Request, re
   const images = files.map(fileToImageEntry);
   const imagePaths = files.map((f) => path.relative(PROJECT_ROOT, f.path).replace(/\\/g, '/'));
 
+  const classStudentIds = getTeacherStudentIds(authReq.user.userId);
+  if (classStudentIds.length === 0) {
+    res.status(400).json({ error: 'Chưa có học sinh nào trong lớp' });
+    return;
+  }
+
   try {
     const { questions: rawQuestions } = await generateExercises(images, count);
-    const studentCount = createSessionForAllStudents(authReq.user.userId, imagePaths, rawQuestions);
+    const studentCount = createSessionForAllStudents(authReq.user.userId, imagePaths, rawQuestions, classStudentIds);
     res.json({ ok: true, studentCount, questionCount: rawQuestions.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('generateAll error:', message);
     res.status(500).json({ error: 'Failed to generate exercises', detail: message });
+  }
+});
+
+// POST /api/generate-preview — teacher only: generate questions into a draft session (not distributed yet)
+router.post('/generate-preview', upload.array('images', 10), async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+
+  if (authReq.user.role !== 'teacher') {
+    res.status(403).json({ error: 'Chỉ giáo viên mới có thể tạo bài xem trước' });
+    return;
+  }
+
+  const limit = getUserGenerateLimit(authReq.user.userId, authReq.user.role);
+  try {
+    checkAndIncrement(authReq.user.userId, 'generate_exercises', limit);
+  } catch (err) {
+    if (err instanceof RateLimitError) {
+      res.status(429).json({
+        error: 'Đã đạt giới hạn tạo bài tập hôm nay',
+        limit: err.limit,
+        used: err.used,
+        resetsAt: '00:00 ngày mai (UTC+7)',
+      });
+      return;
+    }
+    throw err;
+  }
+
+  const files = req.files as Express.Multer.File[] | undefined;
+  if (!files || files.length === 0) {
+    res.status(400).json({ error: 'No image files uploaded' });
+    return;
+  }
+
+  const count = parseInt(String(req.body.count ?? '10'), 10) || 10;
+  const images = files.map(fileToImageEntry);
+  const imagePaths = files.map((f) => path.relative(PROJECT_ROOT, f.path).replace(/\\/g, '/'));
+
+  try {
+    const { questions: rawQuestions } = await generateExercises(images, count);
+    // Draft: student_id = teacher's own userId, so it won't show up in any student's exercise list
+    const session = createSession(authReq.user.userId, authReq.user.userId, imagePaths, rawQuestions, false);
+    res.json({ ok: true, sessionId: session.id, questions: session.questions, imagePaths });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('generatePreview error:', message);
+    res.status(500).json({ error: 'Failed to generate exercises', detail: message });
+  }
+});
+
+// POST /api/distribute-session — teacher only: distribute a draft session to all students in class
+router.post('/distribute-session', async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+
+  if (authReq.user.role !== 'teacher') {
+    res.status(403).json({ error: 'Chỉ giáo viên mới có thể giao bài' });
+    return;
+  }
+
+  const { sessionId } = req.body as { sessionId?: string };
+  if (!sessionId) {
+    res.status(400).json({ error: 'sessionId là bắt buộc' });
+    return;
+  }
+
+  const classStudentIds = getTeacherStudentIds(authReq.user.userId);
+  if (classStudentIds.length === 0) {
+    res.status(400).json({ error: 'Chưa có học sinh nào trong lớp' });
+    return;
+  }
+
+  try {
+    const studentCount = distributeSessionToStudents(sessionId, authReq.user.userId, classStudentIds);
+    res.json({ ok: true, studentCount });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('distributeSession error:', message);
+    res.status(400).json({ error: message });
   }
 });
 

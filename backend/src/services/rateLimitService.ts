@@ -54,7 +54,7 @@ export function getAllUsageToday(): Array<{ user_id: number; action: string; cou
   ).all(date) as Array<{ user_id: number; action: string; count: number }>;
 }
 
-const DEFAULT_LIMITS: Record<string, number> = { teacher: 20, parent: 10, student: 0 };
+const DEFAULT_LIMITS: Record<string, number> = { admin: 0, teacher: 20, parent: 10, student: 0 };
 
 export function getUserGenerateLimit(userId: number, role: string): number {
   const row = db.prepare(

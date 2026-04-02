@@ -8,6 +8,7 @@ import dataRoutes from './routes/dataRoutes';
 import uploadRoutes from './routes/uploadRoutes';
 import teacherRoutes from './routes/teacherRoutes';
 import parentRoutes from './routes/parentRoutes';
+import adminRoutes from './routes/adminRoutes';
 
 const app = express();
 const PORT = 3001;
@@ -26,6 +27,7 @@ app.use('/auth', authRoutes);
 // Protected API routes — valid JWT required
 app.use('/api', authMiddleware, dataRoutes);
 app.use('/api', authMiddleware, uploadRoutes);
+app.use('/admin', authMiddleware, adminRoutes);
 app.use('/teacher', authMiddleware, teacherRoutes);
 app.use('/parent', authMiddleware, parentRoutes);
 

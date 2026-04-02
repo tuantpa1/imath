@@ -5,7 +5,7 @@ Web application to help primary school children (ages 6–11) practice math.
 Parents upload textbook photos → Claude AI generates exercises → Children complete them and earn reward points.
 
 ## Status
-**All features implemented.** Multi-user auth, multi-answer questions, fraction answers, mobile layout, wrong-answer grouping, rate limiting with per-user limits, teacher dashboard (6 tabs), bulk generate for all students.
+**V2 complete.** 4 roles (admin/teacher/parent/student), class-scoped teacher routes, AdminDashboard (7 tabs), TeacherView (3 tabs), teacher_students table for class assignment. Session history preserved via `superseded` flag — new teacher tasks no longer wipe old incomplete ones from history.
 
 ## Tech Stack
 - **Frontend:** React + TypeScript (port 3000)
@@ -32,16 +32,18 @@ imath/
 │       │   ├── LoginPage.tsx         # JWT login form (all roles); no default account hint
 │       │   ├── StudentMode.tsx       # Student exercises + fraction keyboard + daily skip quota display
 │       │   ├── ParentMode.tsx        # Upload images + generate + view questions + scores/redeem
-│       │   └── TeacherDashboard.tsx  # 6-tab admin dashboard
+│       │   ├── AdminDashboard.tsx    # 7-tab admin dashboard (admin role)
+│       │   ├── TeacherView.tsx       # 3-tab class dashboard (teacher role)
+│       │   └── TeacherDashboard.tsx  # LEGACY — no longer routed, kept for reference
 │       ├── services/
 │       │   ├── authService.ts    # login/logout/getToken/getCurrentUser
 │       │   └── apiService.ts     # fetch wrapper with JWT header + 401/403/429/5xx handling
 │       ├── App.css               # Global styles + animation keyframes + mobile safeguards
-│       └── App.tsx               # Role-based routing: student/parent/teacher/login
+│       └── App.tsx               # Role-based routing: student/parent/teacher/admin/login
 ├── backend/
 │   └── src/
 │       ├── database/
-│       │   ├── db.ts             # better-sqlite3 init, WAL mode, foreign_keys=ON, seeds teacher account
+│       │   ├── db.ts             # better-sqlite3 init, WAL mode, foreign_keys=ON, seeds admin account; migrations for admin role + teacher_students + superseded column
 │       │   └── schema.ts         # SCHEMA_SQL — all CREATE TABLE IF NOT EXISTS statements
 │       ├── middleware/
 │       │   ├── authMiddleware.ts     # verifies JWT, attaches req.user
@@ -50,16 +52,17 @@ imath/
 │       ├── routes/
 │       │   ├── authRoutes.ts         # POST /auth/login (public)
 │       │   ├── dataRoutes.ts         # scores, exercises, rewards CRUD + GET /api/usage
-│       │   ├── uploadRoutes.ts       # generate-exercises, generate-skip, generate-extra, generate-all
+│       │   ├── uploadRoutes.ts       # generate-exercises (teacher/parent), generate-skip, generate-extra, generate-all (teacher→class only)
 │       │   ├── parentRoutes.ts       # /parent/children, /parent/children/:id/redeem
-│       │   └── teacherRoutes.ts      # /teacher/* — students, parents, scores, leaderboard, usage, limits
+│       │   ├── teacherRoutes.ts      # /teacher/* — class-scoped: students, leaderboard, scores, wrong-answers, usage, sessions, batch-questions, batch-completion, completion
+│       │   └── adminRoutes.ts        # /admin/* — all users, teacher-student assignment, usage, account management
 │       ├── services/
 │       │   ├── authService.ts        # hashPassword, verifyToken, TokenPayload type
 │       │   ├── claudeService.ts      # Claude API integration; returns { questions, usage }
 │       │   ├── geminiService.ts      # Gemini 2.5 Flash integration — same interface as claudeService
 │       │   ├── aiService.ts          # Router: reads AI_MODEL env var, delegates to claude or gemini
 │       │   ├── rateLimitService.ts   # checkAndIncrement (transactional), getUserGenerateLimit, setUserGenerateLimit
-│       │   └── storageServiceSQLite.ts  # all DB reads/writes, createSession, createSessionForAllStudents
+│       │   └── storageServiceSQLite.ts  # all DB reads/writes, createSession, createSessionForAllStudents, distributeSessionToStudents
 │       └── index.ts              # Express app, route mounting, listens on 0.0.0.0:3001
 └── data/
     ├── imath.db                  # SQLite database (auto-created on first run)
@@ -68,14 +71,16 @@ imath/
     └── scores.json.backup        # retired
 ```
 
-## Three Roles
+## Four Roles
 | Role | Login | What they can do |
 |------|-------|------------------|
-| **teacher** | username + password | Full dashboard: manage students/parents, view all scores, set per-user API limits, bulk generate for all students |
+| **admin** | username + password | Full system management: create/delete/lock all accounts, assign students to teachers, view all scores, set rate limits |
+| **teacher** | username + password | Class-scoped dashboard: view own class only, generate exercises for their students |
 | **parent** | username + password | Upload images, generate exercises for linked children, view questions, view/redeem points |
 | **student** | username + password | Do exercises, earn points, skip questions (daily limit) |
 
-**Default teacher account:** username `teacher` / password `teacher123` (seeded on first DB init)
+**Default admin account:** username `admin` / password `admin123` (seeded on first DB init)
+**Migration:** existing `teacher`/`teacher123` account is promoted to `admin` role on first V2 startup
 
 ## Authentication Flow
 1. Any role → `POST /auth/login` → receives JWT
@@ -85,14 +90,16 @@ imath/
 5. `resolveStudentId` middleware enforces data isolation:
    - `student` → always own userId (ignores any `?studentId` param)
    - `parent` → must pass `?studentId` of a linked child (verified via `family_links`)
-   - `teacher` → any valid studentId
+   - `teacher` → must pass `?studentId` of a student in their class (verified via `teacher_students`)
+   - `admin` → any valid studentId
 
-## SQLite Schema (10 tables)
+## SQLite Schema (11 tables)
 | Table | Purpose |
 |-------|---------|
-| `users` | All accounts (teacher/parent/student), `is_active` soft-delete |
+| `users` | All accounts (admin/teacher/parent/student), `is_active` soft-delete |
 | `family_links` | parent_id ↔ student_id many-to-many |
-| `sessions` | Exercise sessions created per student (`created_by` tracks who generated) |
+| `teacher_students` | teacher_id ↔ student_id; `student_id UNIQUE` (1 student per class) |
+| `sessions` | Exercise sessions per student (`created_by` tracks who generated; `superseded=1` marks tasks replaced by a newer one) |
 | `questions` | Questions within a session (`answer_text` for fractions, `answers_json` for multi-answer) |
 | `scores` | Per-student session scores |
 | `score_history` | Points change log |
@@ -103,18 +110,20 @@ imath/
 | `sqlite_sequence` | Auto-managed by SQLite for AUTOINCREMENT |
 
 Schema auto-applied via `db.exec(SCHEMA_SQL)` on every server startup — no migration step needed.
+Additive column migrations (e.g. `ALTER TABLE sessions ADD COLUMN superseded`) are done with try/catch in `db.ts` for existing databases.
 
 **`foreign_keys = ON`** is set in `db.ts`. All cascade deletes must be ordered leaf → parent.
 
 ## API Rate Limits
 | Role | Action | Default limit/day |
 |------|--------|-----------|
+| admin | generate_exercises | 0 (cannot generate) |
 | teacher | generate_exercises | 20 |
 | parent | generate_exercises | 10 |
 | student | generate_exercises | **blocked** (403) |
 | student | skip_question | 20 |
 
-- Per-user limit override stored in `user_limits` table; teacher can set via `PATCH /teacher/users/:id/limit`
+- Per-user limit override stored in `user_limits` table; admin can set via `PATCH /admin/users/:id/limit`
 - `getUserGenerateLimit(userId, role)` reads `user_limits` first, falls back to role default
 - Date key = `YYYY-MM-DD` in **UTC+7** (Vietnam time); resets at midnight UTC+7
 - Over limit → **HTTP 429** with Vietnamese error message
@@ -145,7 +154,7 @@ GET  /api/usage           → { generate_exercises: {used,limit,remaining}, skip
 POST /api/generate-exercises   (teacher/parent only; rate-limited; multipart/images + count + studentId)
 POST /api/generate-skip        (student: rate-limited to 20/day)
 POST /api/generate-extra       (teacher/parent/student via resolveStudentId)
-POST /api/generate-all         (teacher only; rate-limited; multipart/images + count → all active students)
+POST /api/generate-all         (teacher only; rate-limited; multipart/images + count → all students in teacher's class)
 ```
 
 ### Parent only
@@ -154,31 +163,56 @@ GET  /parent/children                       → [{ id, username, display_name }]
 POST /parent/children/:id/redeem            { points }
 ```
 
-### Teacher only
+### Teacher only (class-scoped)
 ```
-GET  /teacher/students                      → all students with parent names
-GET  /teacher/parents                       → all parents with child names
-GET  /teacher/students/:id/scores
-GET  /teacher/students/:id/wrong-answers
-GET  /teacher/leaderboard                   → sorted by points desc
-GET  /teacher/usage                         → per-user daily API usage + limits
-POST /teacher/students                      { username, password, displayName, role, linkToParentId? }
-POST /teacher/family-links                  { parentId, studentId }
-DELETE /teacher/users/:id                   soft-delete (sets is_active=0)
-DELETE /teacher/users/:id/permanent         hard-delete with full cascade (students only, or parents with no children)
-PATCH  /teacher/users/:id/reactivate        restores is_active=1
-PATCH  /teacher/users/:id/limit             { generateLimit } → sets per-user daily generate limit
+GET  /teacher/students                      → { students, message? } — only students in this teacher's class
+GET  /teacher/students/:id/scores           → 403 if student not in class
+GET  /teacher/students/:id/wrong-answers    → 403 if student not in class
+GET  /teacher/leaderboard                   → class leaderboard only
+GET  /teacher/usage                         → this teacher's own API usage only
+GET  /teacher/sessions                      → [{ batch_ts, date, question_count, student_count, completed_count }] — full history incl. superseded batches
+GET  /teacher/batch-questions?batch_ts=     → questions from a specific batch
+GET  /teacher/batch-completion?batch_ts=    → per-student completion status for a specific batch
+GET  /teacher/completion                    → completion status for the most recent active (non-superseded) batch
 ```
 
-## Teacher Dashboard (6 tabs)
+### Admin only
+```
+GET  /admin/users                           → all users (all roles) with extra info
+GET  /admin/students                        → all students with teacher + parent info
+GET  /admin/teachers                        → all teachers with student counts + lists
+GET  /admin/parents                         → all parents with children
+POST /admin/users                           { username, password, displayName, role, linkToParentId?, assignToTeacherId? }
+DELETE /admin/users/:id                     soft-delete (is_active=0)
+DELETE /admin/users/:id/permanent           hard-delete with full cascade (all roles)
+PATCH  /admin/users/:id/reactivate          restore is_active=1
+GET  /admin/teacher-students                → { assignments, unassigned_students }
+POST /admin/teacher-students                { teacherId, studentId } — assign student to teacher
+DELETE /admin/teacher-students/:studentId   unassign student from teacher
+GET  /admin/usage                           → all users' daily API usage
+PATCH /admin/users/:id/limit               { generateLimit }
+GET  /admin/leaderboard                     → global leaderboard
+GET  /admin/students/:id/scores
+GET  /admin/students/:id/wrong-answers
+```
+
+## Admin Dashboard (7 tabs)
 | Tab | Content |
 |-----|---------|
-| 📊 Tổng quan | Student count + total points + leaderboard with medals |
-| 👦 Học sinh | Searchable student list; detail panel (scores + wrong answers); soft-deactivate/reactivate; permanent delete |
-| 👨‍👩‍👧 PH | Parent list with linked children; soft-deactivate/reactivate; permanent delete (only if no linked children) |
-| 📈 Dùng API | Per-user rate limit usage with color-coded bars (green/amber/rose); inline limit editor; refresh button |
-| ➕ Thêm TK | Create student/parent account + link parent–student |
-| 📚 Giao bài | Upload images → generate once → distribute same questions to ALL active students (replaces their incomplete sessions) |
+| 📊 Tổng quan | Stat cards (teachers/students/parents/total points) + global top-10 leaderboard |
+| 👨‍🏫 Giáo viên | All teachers; expand to see class students; lock/unlock/delete |
+| 👦 Học sinh | All students with teacher + parent info; "Chưa phân lớp" badge; expand for scores + wrong answers |
+| 👨‍👩‍👧 Phụ huynh | All parents with children; lock/unlock/delete |
+| 📈 Dùng API | Per-user rate limit usage with color-coded bars; inline limit editor |
+| ➕ Thêm TK | Create any account (admin/teacher/parent/student); student gets optional teacher assignment + parent link |
+| 🔗 Phân lớp | Assign students to teachers; unassigned students section; teacher class cards with ✕ unassign |
+
+## Teacher View (3 tabs)
+| Tab | Content |
+|-----|---------|
+| 📊 Lớp của tôi | Stat cards + usage indicator + class leaderboard; empty-class message if not assigned |
+| 👦 Học sinh | Class students with points + session count; expand for scores + wrong answers (read-only) |
+| 📚 Giao bài | Upload images → generate once → distribute to class; question preview with per-question delete |
 
 ## Parent Mode Views
 | View | Content |
@@ -221,17 +255,26 @@ PATCH  /teacher/users/:id/limit             { generateLimit } → sets per-user 
 
 ### Bulk Generate (`POST /api/generate-all`)
 - Teacher-only; counts against teacher's daily generate limit
-- Calls Claude/Gemini **once** — same questions distributed to all active students
-- For each student: deletes all **incomplete** sessions + their questions, then inserts new session
-- Completed sessions are preserved (student history unchanged)
-- Session IDs format: `session_all_<timestamp>_<studentId>` (guaranteed unique)
+- Calls Claude/Gemini **once** — same questions distributed to all students in teacher's class
+- For each student: marks all **incomplete** sessions as `superseded = 1`, then inserts new session
+- Completed sessions and superseded sessions are preserved in DB (full history)
+- Session IDs format: `session_all_<timestamp>_<studentId>` (guaranteed unique; timestamp = batch key)
 - Returns `{ ok, studentCount, questionCount }`
+- Returns 400 if teacher has no students assigned
+
+### Session Superseding
+- When a teacher assigns a new task, existing incomplete sessions are marked `superseded = 1` (not deleted)
+- Students only see `superseded = 0` sessions in their exercise view
+- Teacher history (`GET /teacher/sessions`) shows all batches including superseded ones
+- `batch_ts` (the Unix timestamp embedded in session IDs) is the unique batch identifier — more reliable than `date + question_count` which can collide
 
 ### Account Management
-- **Soft-delete** (`DELETE /teacher/users/:id`): sets `is_active=0`; account stays visible in list (greyed out); reactivatable
-- **Hard-delete** (`DELETE /teacher/users/:id/permanent`): full cascade in FK order:
-  - Student: wrong_answers → score_history → redemptions → scores → questions (via sessions) → sessions → family_links → api_usage → user_limits → users
-  - Parent (only if no linked children): redemptions → questions (via sessions) → sessions → family_links → api_usage → user_limits → users
+- **Soft-delete** (`DELETE /admin/users/:id`): sets `is_active=0`; reactivatable via PATCH /admin/users/:id/reactivate
+- **Hard-delete** (`DELETE /admin/users/:id/permanent`): full cascade in FK order:
+  - Student: wrong_answers → score_history → redemptions → scores → questions (via sessions) → sessions → family_links → teacher_students → api_usage → user_limits → users
+  - Teacher: teacher_students → questions/sessions (created_by) → api_usage → user_limits → users
+  - Parent (only if no linked children): redemptions → questions/sessions → family_links → api_usage → user_limits → users
+- Admin cannot delete their own account
 
 ## Commands
 ```bash

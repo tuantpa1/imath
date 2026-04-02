@@ -22,18 +22,71 @@ try {
 } catch {
   // Column already exists — ignore
 }
+try {
+  db.exec('ALTER TABLE sessions ADD COLUMN superseded INTEGER NOT NULL DEFAULT 0');
+} catch {
+  // Column already exists — ignore
+}
 
 export function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-// Seed default teacher account on first run
-const existingTeacher = db.prepare("SELECT id FROM users WHERE username = 'teacher'").get();
-if (!existingTeacher) {
+// Migration: rebuild users table if CHECK constraint doesn't include 'admin'
+const usersSchema = db.prepare(
+  "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+).get() as { sql: string } | undefined;
+if (usersSchema && !usersSchema.sql.includes("'admin'")) {
+  db.pragma('foreign_keys = OFF');
+  db.exec(`
+    BEGIN;
+    CREATE TABLE users_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('admin','teacher','parent','student')),
+      display_name TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      is_active INTEGER DEFAULT 1
+    );
+    INSERT INTO users_new SELECT * FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_new RENAME TO users;
+    COMMIT;
+  `);
+  db.pragma('foreign_keys = ON');
+  console.log('[DB] Rebuilt users table with updated role CHECK constraint');
+}
+
+// Migration: create teacher_students table if it doesn't exist (idempotent)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS teacher_students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    teacher_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL UNIQUE,
+    assigned_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (teacher_id) REFERENCES users(id),
+    FOREIGN KEY (student_id) REFERENCES users(id)
+  )
+`);
+
+// Migration: promote existing 'teacher' username account to 'admin' role (once)
+const hasAdmin = db.prepare("SELECT id FROM users WHERE role = 'admin'").get();
+if (!hasAdmin) {
+  const oldTeacher = db.prepare("SELECT id FROM users WHERE username = 'teacher' AND role = 'teacher'").get() as { id: number } | undefined;
+  if (oldTeacher) {
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(oldTeacher.id);
+    console.log("[DB] Migrated user 'teacher' from role teacher → admin");
+  }
+}
+
+// Seed default admin account on first run
+const existingAdmin = db.prepare("SELECT id FROM users WHERE username = 'admin'").get();
+if (!existingAdmin) {
   db.prepare(
     'INSERT INTO users (username, password_hash, role, display_name) VALUES (?, ?, ?, ?)'
-  ).run('teacher', hashPassword('teacher123'), 'teacher', 'Giáo viên');
-  console.log('[db] Seeded default teacher account (username: teacher, password: teacher123)');
+  ).run('admin', hashPassword('admin123'), 'admin', 'Quản trị viên');
+  console.log('[DB] Seeded default admin account (username: admin, password: admin123)');
 }
 
 export { db };

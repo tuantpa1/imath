@@ -1,4 +1,5 @@
 import { db } from '../database/db';
+import { isStudentInTeacherClass } from '../services/storageServiceSQLite';
 import type { AuthRequest } from './authMiddleware';
 import type { Response } from 'express';
 
@@ -6,7 +7,8 @@ import type { Response } from 'express';
  * Resolves the target studentId from the request based on the caller's role.
  * - student  → always own userId (query/body params ignored)
  * - parent   → studentId from query/body, verified via family_links
- * - teacher  → studentId from query/body, any student allowed
+ * - teacher  → studentId from query/body, verified to be in teacher's class
+ * - admin    → studentId from query/body, any student allowed
  *
  * Returns null and writes the appropriate error response when resolution fails.
  */
@@ -35,5 +37,13 @@ export function resolveStudentId(req: AuthRequest, res: Response): number | null
     }
   }
 
+  if (role === 'teacher') {
+    if (!isStudentInTeacherClass(userId, studentId)) {
+      res.status(403).json({ error: 'Học sinh không thuộc lớp của bạn' });
+      return null;
+    }
+  }
+
+  // admin: any studentId allowed
   return studentId;
 }

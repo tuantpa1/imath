@@ -166,7 +166,7 @@ export function getTotalPoints(studentId: number): number {
 
 export function readExercises(studentId: number): Exercises {
   const sessionRows = db
-    .prepare('SELECT id, created_at, image_paths, completed, is_extra FROM sessions WHERE student_id = ? ORDER BY created_at ASC, id ASC')
+    .prepare('SELECT id, created_at, image_paths, completed, is_extra FROM sessions WHERE student_id = ? AND superseded = 0 ORDER BY created_at ASC, id ASC')
     .all(studentId) as Array<{
     id: string; created_at: string; image_paths: string; completed: number; is_extra: number;
   }>;
@@ -254,8 +254,8 @@ export function createSession(
   rawQuestions: RawClaudeQuestion[],
   isExtra: boolean
 ): Session {
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM sessions').get() as { c: number }).c;
-  const sessionId = `session_${String(count + 1).padStart(3, '0')}`;
+  const now = Date.now();
+  const sessionId = `session_${now}_${studentId}`;
   const today = new Date().toISOString().split('T')[0];
 
   const tx = db.transaction(() => {
@@ -354,10 +354,11 @@ export function createSessionForAllStudents(
   createdBy: number,
   imagePaths: string[],
   rawQuestions: RawClaudeQuestion[],
+  studentIds?: number[],
 ): number {
-  const students = db
-    .prepare("SELECT id FROM users WHERE role = 'student' AND is_active = 1")
-    .all() as Array<{ id: number }>;
+  const students: Array<{ id: number }> = studentIds !== undefined
+    ? studentIds.map((id) => ({ id }))
+    : db.prepare("SELECT id FROM users WHERE role = 'student' AND is_active = 1").all() as Array<{ id: number }>;
 
   if (students.length === 0) return 0;
 
@@ -367,14 +368,8 @@ export function createSessionForAllStudents(
 
   const tx = db.transaction(() => {
     for (const { id: studentId } of students) {
-      // Remove all incomplete sessions (and their questions) for this student
-      const incompleteIds = db
-        .prepare('SELECT id FROM sessions WHERE student_id = ? AND completed = 0')
-        .all(studentId) as Array<{ id: string }>;
-      for (const s of incompleteIds) {
-        db.prepare('DELETE FROM questions WHERE session_id = ?').run(s.id);
-      }
-      db.prepare('DELETE FROM sessions WHERE student_id = ? AND completed = 0').run(studentId);
+      // Mark all incomplete sessions as superseded (preserve for teacher history)
+      db.prepare('UPDATE sessions SET superseded = 1 WHERE student_id = ? AND completed = 0').run(studentId);
 
       // Create new session
       const sessionId = `session_all_${now}_${studentId}`;
@@ -415,6 +410,70 @@ export function deleteAllSessions(studentId: number): void {
   tx();
 }
 
+/**
+ * Copies questions from a draft/preview session to new sessions for each student,
+ * then deletes the source draft session.
+ * Returns the number of students that received sessions.
+ */
+export function distributeSessionToStudents(
+  sourceSessionId: string,
+  createdBy: number,
+  studentIds: number[],
+): number {
+  if (studentIds.length === 0) return 0;
+
+  const sourceSession = db.prepare(
+    'SELECT image_paths, created_at FROM sessions WHERE id = ? AND created_by = ?'
+  ).get(sourceSessionId, createdBy) as { image_paths: string; created_at: string } | undefined;
+  if (!sourceSession) throw new Error('Draft session not found');
+
+  const sourceQuestions = db.prepare(
+    'SELECT question_text, type, difficulty, answer, answer_text, answers_json, order_matters, unit FROM questions WHERE session_id = ? ORDER BY rowid ASC'
+  ).all(sourceSessionId) as Array<{
+    question_text: string; type: string; difficulty: string;
+    answer: number | null; answer_text: string | null; answers_json: string | null;
+    order_matters: number; unit: string;
+  }>;
+
+  if (sourceQuestions.length === 0) throw new Error('No questions in draft session');
+
+  const now = Date.now();
+  const today = new Date().toISOString().split('T')[0];
+
+  const tx = db.transaction(() => {
+    for (const studentId of studentIds) {
+      // Mark all incomplete sessions as superseded (preserve for teacher history)
+      db.prepare('UPDATE sessions SET superseded = 1 WHERE student_id = ? AND completed = 0').run(studentId);
+
+      const sessionId = `session_dist_${now}_${studentId}`;
+      db.prepare(
+        `INSERT INTO sessions (id, created_by, student_id, image_paths, created_at, question_count, is_extra, completed)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 0)`
+      ).run(sessionId, createdBy, studentId, sourceSession.image_paths, today, sourceQuestions.length);
+
+      const insertQ = db.prepare(
+        `INSERT INTO questions (id, session_id, question_text, type, difficulty, answer, answer_text, answers_json, order_matters, unit)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      sourceQuestions.forEach((q, i) => {
+        insertQ.run(
+          `${sessionId}_q${i + 1}`, sessionId,
+          q.question_text, q.type, q.difficulty,
+          q.answer, q.answer_text, q.answers_json,
+          q.order_matters, q.unit
+        );
+      });
+    }
+
+    // Delete the draft session
+    db.prepare('DELETE FROM questions WHERE session_id = ?').run(sourceSessionId);
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sourceSessionId);
+  });
+  tx();
+
+  return studentIds.length;
+}
+
 // --- Rewards ---
 
 export function readRewards(): Rewards {
@@ -424,4 +483,51 @@ export function readRewards(): Rewards {
 
 export function writeRewards(data: Rewards): void {
   fs.writeFileSync(REWARDS_PATH, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+// --- Teacher–Student assignments ---
+
+export function hasIncompleteTeacherSession(studentId: number): boolean {
+  // Only check the most recent session created by a teacher for this student
+  const latest = db.prepare(`
+    SELECT s.completed FROM sessions s
+    JOIN users u ON u.id = s.created_by
+    WHERE s.student_id = ? AND u.role = 'teacher'
+    ORDER BY s.created_at DESC, s.id DESC
+    LIMIT 1
+  `).get(studentId) as { completed: number } | undefined;
+  return !!latest && latest.completed === 0;
+}
+
+export function getTeacherStudentIds(teacherId: number): number[] {
+  const rows = db.prepare(
+    'SELECT student_id FROM teacher_students WHERE teacher_id = ?'
+  ).all(teacherId) as { student_id: number }[];
+  return rows.map(r => r.student_id);
+}
+
+export function isStudentInTeacherClass(teacherId: number, studentId: number): boolean {
+  const row = db.prepare(
+    'SELECT 1 FROM teacher_students WHERE teacher_id = ? AND student_id = ?'
+  ).get(teacherId, studentId);
+  return !!row;
+}
+
+export function assignStudentToTeacher(teacherId: number, studentId: number): void {
+  db.prepare(
+    'INSERT OR REPLACE INTO teacher_students (teacher_id, student_id) VALUES (?, ?)'
+  ).run(teacherId, studentId);
+}
+
+export function removeStudentFromTeacher(studentId: number): void {
+  db.prepare('DELETE FROM teacher_students WHERE student_id = ?').run(studentId);
+}
+
+export function getStudentTeacher(studentId: number): { teacher_id: number; display_name: string } | null {
+  return db.prepare(`
+    SELECT ts.teacher_id, u.display_name
+    FROM teacher_students ts
+    JOIN users u ON u.id = ts.teacher_id
+    WHERE ts.student_id = ?
+  `).get(studentId) as { teacher_id: number; display_name: string } | null;
 }

@@ -15,7 +15,7 @@ const AUTH_BASE = `${getBaseUrl()}/auth`;
 export interface AuthUser {
   id: number;
   username: string;
-  role: 'teacher' | 'parent' | 'student';
+  role: 'admin' | 'teacher' | 'parent' | 'student';
   display_name: string;
 }
 

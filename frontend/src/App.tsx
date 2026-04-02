@@ -5,7 +5,8 @@ import type { AuthUser } from './services/authService';
 import LoginPage from './pages/LoginPage';
 import StudentMode from './pages/StudentMode';
 import ParentMode from './pages/ParentMode';
-import TeacherDashboard from './pages/TeacherDashboard';
+import AdminDashboard from './pages/AdminDashboard';
+import TeacherView from './pages/TeacherView';
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
@@ -36,8 +37,12 @@ function App() {
     return <ParentMode onExitToStudent={handleLogout} />;
   }
 
+  if (user.role === 'admin') {
+    return <AdminDashboard onLogout={handleLogout} />;
+  }
+
   if (user.role === 'teacher') {
-    return <TeacherDashboard onLogout={handleLogout} />;
+    return <TeacherView onLogout={handleLogout} />;
   }
 
   return null;
