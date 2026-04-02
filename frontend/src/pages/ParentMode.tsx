@@ -395,7 +395,7 @@ function ScoresView({ onBack, studentId }: { onBack: () => void; studentId: numb
     setRedeeming(true);
 
     try {
-      await api.post(`/parent/children/${studentId}/redeem`, { points: pts });
+      await api.post(`/api/parent/children/${studentId}/redeem`, { points: pts });
       const updated: ScoresData = {
         ...scoresData,
         totalPoints: scoresData.totalPoints - pts,
@@ -590,7 +590,7 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
   const [genUsage, setGenUsage] = useState<{ used: number; limit: number; remaining: number } | null>(null);
 
   useEffect(() => {
-    api.get<Child[]>('/parent/children')
+    api.get<Child[]>('/api/parent/children')
       .then((data) => {
         setChildList(data);
         if (data.length > 0) setSelectedChildId(data[0].id);

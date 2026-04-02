@@ -81,7 +81,7 @@ interface GeneratedQuestion {
 
 type Tab = 'class' | 'students' | 'generate';
 
-const TEACHER = '/teacher';
+const TEACHER = '/api/teacher';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function LoadingSpinner() {

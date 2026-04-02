@@ -27,9 +27,9 @@ app.use('/auth', authRoutes);
 // Protected API routes — valid JWT required
 app.use('/api', authMiddleware, dataRoutes);
 app.use('/api', authMiddleware, uploadRoutes);
-app.use('/admin', authMiddleware, adminRoutes);
-app.use('/teacher', authMiddleware, teacherRoutes);
-app.use('/parent', authMiddleware, parentRoutes);
+app.use('/api/admin', authMiddleware, adminRoutes);
+app.use('/api/teacher', authMiddleware, teacherRoutes);
+app.use('/api/parent', authMiddleware, parentRoutes);
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`iMath backend running on http://0.0.0.0:${PORT}`);

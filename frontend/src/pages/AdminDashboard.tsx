@@ -68,7 +68,7 @@ interface WrongAnswer {
 
 type Tab = 'overview' | 'teachers' | 'students' | 'parents' | 'usage' | 'add' | 'assign';
 
-const ADMIN = '/admin';
+const ADMIN = '/api/admin';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function LoadingSpinner() {
