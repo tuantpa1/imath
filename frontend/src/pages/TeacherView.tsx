@@ -67,13 +67,6 @@ interface SessionBatch {
   completed_count: number;
 }
 
-interface BatchStudent {
-  id: number;
-  name: string;
-  completed: boolean;
-  score: number | null;
-}
-
 interface GeneratedQuestion {
   id?: string;
   question: string;
