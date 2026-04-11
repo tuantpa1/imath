@@ -20,6 +20,28 @@ const REWARDS_PATH = path.join(DATA_DIR, 'rewards.json');
 
 // --- Types ---
 
+// Normalize whatever the AI returns for a comparison question into a valid symbol
+const VALID_SYMBOLS = new Set(['<', '>', '=']);
+const WORD_TO_SYMBOL: Record<string, string> = {
+  'nhỏ hơn': '<', 'bé hơn': '<', 'ít hơn': '<', 'less than': '<',
+  'lớn hơn': '>', 'nhiều hơn': '>', 'greater than': '>',
+  'bằng': '=', 'bằng nhau': '=', 'equal': '=', 'equals': '=',
+};
+
+function normalizeComparisonSymbol(q: { answer?: unknown; answer_text?: string | null }): string | null {
+  const candidates = [q.answer_text, q.answer !== null && q.answer !== undefined ? String(q.answer) : null];
+  for (const c of candidates) {
+    if (!c) continue;
+    const s = String(c).trim();
+    if (VALID_SYMBOLS.has(s)) return s;
+    const lower = s.toLowerCase();
+    for (const [word, sym] of Object.entries(WORD_TO_SYMBOL)) {
+      if (lower.includes(word)) return sym;
+    }
+  }
+  return null;
+}
+
 export interface RawClaudeQuestion {
   question: string;
   type: string;
@@ -203,9 +225,8 @@ export function readExercises(studentId: number): Exercises {
         };
         return frac;
       }
-      // For comparison rows: answer column may hold the symbol as a string (old data) or answer_text may hold it
       const singleAnswerText = q.type === 'comparison'
-        ? (q.answer_text ?? (q.answer !== null && q.answer !== undefined ? String(q.answer) : undefined))
+        ? (normalizeComparisonSymbol({ answer: q.answer, answer_text: q.answer_text }) ?? undefined)
         : (q.answer_text ?? undefined);
       const single: SingleAnswerQuestion = {
         id: q.id, question: q.question_text, type: q.type, difficulty: q.difficulty,
@@ -286,8 +307,7 @@ export function createSession(
       } else if (q.answers) {
         insertQ.run(qId, sessionId, q.question, 'multi_answer', q.difficulty, null, null, JSON.stringify(q.answers), (q.order_matters ?? true) ? 1 : 0, q.unit ?? '');
       } else if (q.type === 'comparison') {
-        // AI may put the symbol in answer_text or (incorrectly) in answer — normalise to answer_text
-        const symbol = q.answer_text ?? (q.answer !== null && q.answer !== undefined ? String(q.answer) : null);
+        const symbol = normalizeComparisonSymbol(q);
         insertQ.run(qId, sessionId, q.question, 'comparison', q.difficulty, null, symbol, null, 1, q.unit ?? '');
       } else if (q.type === 'fraction' && q.answer_text) {
         insertQ.run(qId, sessionId, q.question, 'fraction', q.difficulty, null, q.answer_text, null, 1, q.unit ?? '');
@@ -313,7 +333,7 @@ export function createSession(
       return f;
     }
     const answerText = q.type === 'comparison'
-      ? (q.answer_text ?? (q.answer !== null && q.answer !== undefined ? String(q.answer) : undefined))
+      ? (normalizeComparisonSymbol(q) ?? undefined)
       : q.answer_text;
     const s: SingleAnswerQuestion = { id: qId, question: q.question, type: q.type, difficulty: q.difficulty, answer: q.answer ?? 0, answer_text: answerText, unit: q.unit ?? '' };
     return s;
