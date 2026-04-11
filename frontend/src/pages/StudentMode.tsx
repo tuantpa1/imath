@@ -18,6 +18,7 @@ interface Question {
   answer_text?: string;   // fraction questions: "3/5"
   answers?: AnswerPart[];
   order_matters?: boolean;
+  choices?: { options: string[]; correct_index: number };  // multiple_choice
   type: string;
   difficulty?: string;
   unit?: string;
@@ -139,6 +140,81 @@ function renderWithFractions(text: string): React.ReactNode {
   });
 }
 
+// ── Multiple choice buttons ───────────────────────────────────────────────────
+
+const CHOICE_LABELS = ['A', 'B', 'C', 'D'];
+
+function MultipleChoiceButtons({
+  options,
+  correctIndex,
+  selectedIndex,
+  answerState,
+  onSelect,
+}: {
+  options: string[];
+  correctIndex: number;
+  selectedIndex: number | null;
+  answerState: 'idle' | 'correct' | 'wrong';
+  onSelect: (i: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 w-full mt-3">
+      {options.map((opt, i) => {
+        let cls = 'btn-scale w-full text-left py-4 px-5 rounded-2xl font-bold border-2 transition-all ';
+        if (answerState === 'correct' && i === correctIndex) {
+          cls += 'bg-green-500 border-green-600 text-white';
+        } else if (answerState === 'wrong' && selectedIndex !== null && i === selectedIndex) {
+          cls += 'bg-red-500 border-red-600 text-white';
+        } else if (answerState === 'wrong' && i === correctIndex) {
+          cls += 'bg-green-500 border-green-600 text-white';
+        } else if (answerState === 'idle' && selectedIndex === i) {
+          cls += 'bg-violet-500 border-violet-600 text-white';
+        } else {
+          cls += 'bg-white border-violet-200 text-gray-800 hover:border-violet-400';
+        }
+        return (
+          <button
+            key={i}
+            onPointerDown={(e) => { e.preventDefault(); onSelect(i); }}
+            className={cls}
+          >
+            <span className="font-extrabold text-violet-600 mr-2">{CHOICE_LABELS[i]})</span>
+            {opt}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Comparison keyboard (<, =, >) ──────────────────────────────────────────────
+
+const COMPARISON_SYMBOLS = new Set(['<', '>', '=']);
+
+function ComparisonKeyboard({
+  onSelect,
+  disabled,
+}: {
+  onSelect: (symbol: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="flex gap-3 mt-4 w-full">
+      {(['<', '=', '>']).map((s) => (
+        <button
+          key={s}
+          type="button"
+          onPointerDown={(e) => { e.preventDefault(); if (!disabled) onSelect(s); }}
+          disabled={disabled}
+          className="flex-1 py-5 rounded-2xl font-extrabold text-4xl shadow-lg transition-all active:scale-95 select-none bg-violet-500 hover:bg-violet-600 text-white border-2 border-violet-400 disabled:opacity-40"
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── Fraction keyboard ──────────────────────────────────────────────────────────
 
 function FractionKeyboard({
@@ -244,6 +320,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
   const [answerInput, setAnswerInput] = useState('');
   const [multiInputs, setMultiInputs] = useState<string[]>([]);
   const [focusedPartIndex, setFocusedPartIndex] = useState<number | null>(null);
+  const [selectedChoiceIndex, setSelectedChoiceIndex] = useState<number | null>(null);
   const [answerState, setAnswerState] = useState<AnswerState>('idle');
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [skipsUsed, setSkipsUsed] = useState(0);
@@ -346,9 +423,12 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
       handleStartLatest();
       return;
     }
+    // Re-hydrate queue from fresh server data to pick up any answer_text fixes
+    const freshById = new Map(session.questions.map((q) => [q.id, q]));
+    const freshQueue = saved.queue.map((q) => freshById.get(q.id) ?? q);
     setOriginalQueue(session.questions);
-    setQueue(saved.queue);
-    setCurrentQ(saved.queue[0]);
+    setQueue(freshQueue);
+    setCurrentQ(freshQueue[0]);
     setSessionPoints(saved.sessionPoints);
     setTotalDone(saved.totalDone);
     setCorrectCount(saved.correctCount);
@@ -444,11 +524,62 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
   }
 
   // ── Answer submission ────────────────────────────────────────────────────────
-  async function handleCheckAnswer() {
+  async function handleCheckAnswer(inputOverride?: string) {
     if (!currentQ || answerState !== 'idle') return;
 
-    const isFraction = currentQ.type === 'fraction';
+    const isFraction = currentQ.type === 'fraction' || currentQ.type === 'comparison';
     const isMulti = Array.isArray(currentQ.answers) && (currentQ.answers?.length ?? 0) > 0;
+    const isMultiChoice = currentQ.type === 'multiple_choice';
+
+    if (isMultiChoice) {
+      const choiceIdx = typeof inputOverride === 'string' ? parseInt(inputOverride, 10) : selectedChoiceIndex;
+      if (choiceIdx === null || choiceIdx === undefined || isNaN(choiceIdx as number)) return;
+      const idx = choiceIdx as number;
+      setSelectedChoiceIndex(idx);
+      const correct = currentQ.choices!.correct_index;
+      if (idx === correct) {
+        const newPoints = sessionPoints + POINTS_PER_QUESTION;
+        setSessionPoints(newPoints);
+        setCorrectCount((c) => c + 1);
+        setAnswerState('correct');
+        setFeedbackMsg('Đúng rồi! Giỏi lắm! 🎉');
+        setFloatPts({ id: Date.now(), pts: POINTS_PER_QUESTION, positive: true });
+        setTimeout(() => setFloatPts(null), 1200);
+        const newScores: Scores = {
+          totalPoints: scores.totalPoints + POINTS_PER_QUESTION,
+          history: [...scores.history, { date: today(), earned: POINTS_PER_QUESTION, activity: 'exercise session' }],
+          redeemed: scores.redeemed,
+          wrongQuestions: scores.wrongQuestions,
+        };
+        setScores(newScores);
+        await api.post('/api/scores', newScores).catch(() => {});
+        setTimeout(() => advanceQueue(), 1500);
+      } else {
+        setAnswerState('wrong');
+        const correctText = currentQ.choices!.options[correct];
+        setFeedbackMsg(`Đáp án đúng là: ${CHOICE_LABELS[correct]}) ${correctText}`);
+        setFloatPts({ id: Date.now(), pts: 5, positive: false });
+        setTimeout(() => setFloatPts(null), 1200);
+        const newTotal = Math.max(0, scores.totalPoints - 5);
+        setSessionPoints(Math.max(0, sessionPoints - 5));
+        const wrongEntry: WrongQuestion = {
+          question: currentQ.question,
+          type: 'multiple_choice',
+          correctAnswer: `${CHOICE_LABELS[correct]}) ${correctText}`,
+          studentAnswer: `${CHOICE_LABELS[idx]}) ${currentQ.choices!.options[idx]}`,
+          date: today(),
+        };
+        const newScores: Scores = {
+          totalPoints: newTotal, history: scores.history,
+          redeemed: scores.redeemed,
+          wrongQuestions: [...scores.wrongQuestions, wrongEntry],
+        };
+        setScores(newScores);
+        await api.post('/api/scores', newScores).catch(() => {});
+        setTimeout(() => advanceQueue(), 2000);
+      }
+      return;
+    }
 
     if (isMulti) {
       const parts = currentQ.answers!;
@@ -562,10 +693,55 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
         setTimeout(() => advanceQueue(), 2500);
       }
     } else if (isFraction) {
-      // ── Fraction answer ───────────────────────────────────────────────────────
-      const input = answerInput.trim();
+      // ── Fraction / comparison answer ──────────────────────────────────────────
+      const input = (inputOverride ?? answerInput).trim();
       if (!input) return;
-      // Validate: must be "a/b" or just "a"
+      // answer_text holds the symbol ("<", ">", "=") for both comparison types
+      const correct = currentQ.answer_text ?? '';
+
+      // Comparison question (<, >, =) — simple string equality
+      if (currentQ.type === 'comparison' || COMPARISON_SYMBOLS.has(correct)) {
+        if (input === correct) {
+          const newPoints = sessionPoints + POINTS_PER_QUESTION;
+          setSessionPoints(newPoints);
+          setCorrectCount((c) => c + 1);
+          setAnswerState('correct');
+          setFeedbackMsg('Đúng rồi! Giỏi lắm! 🎉');
+          setFloatPts({ id: Date.now(), pts: POINTS_PER_QUESTION, positive: true });
+          setTimeout(() => setFloatPts(null), 1200);
+          const newScores: Scores = {
+            totalPoints: scores.totalPoints + POINTS_PER_QUESTION,
+            history: [...scores.history, { date: today(), earned: POINTS_PER_QUESTION, activity: 'exercise session' }],
+            redeemed: scores.redeemed,
+            wrongQuestions: scores.wrongQuestions,
+          };
+          setScores(newScores);
+          await api.post('/api/scores', newScores).catch(() => {});
+          setTimeout(() => advanceQueue(), 1500);
+        } else {
+          setAnswerState('wrong');
+          setFeedbackMsg(`Đáp án đúng là: ${correct}`);
+          setFloatPts({ id: Date.now(), pts: 5, positive: false });
+          setTimeout(() => setFloatPts(null), 1200);
+          const newTotal = Math.max(0, scores.totalPoints - 5);
+          setSessionPoints(Math.max(0, sessionPoints - 5));
+          const wrongEntry: WrongQuestion = {
+            question: currentQ.question, type: 'fraction',
+            correctAnswer: correct, studentAnswer: input, date: today(),
+          };
+          const newScores: Scores = {
+            totalPoints: newTotal, history: scores.history,
+            redeemed: scores.redeemed,
+            wrongQuestions: [...scores.wrongQuestions, wrongEntry],
+          };
+          setScores(newScores);
+          await api.post('/api/scores', newScores).catch(() => {});
+          setTimeout(() => advanceQueue(), 2000);
+        }
+        return;
+      }
+
+      // Regular fraction: validate "a/b" or "a"
       const isValid = /^\d+$/.test(input) || /^\d+\/\d+$/.test(input);
       if (!isValid) {
         setFeedbackMsg('Đáp án không hợp lệ! Nhập dạng a/b (ví dụ: 3/5)');
@@ -573,7 +749,6 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
         setTimeout(() => advanceQueue(), 2000);
         return;
       }
-      const correct = currentQ.answer_text ?? '';
       if (compareFractionAnswer(input, correct)) {
         const newPoints = sessionPoints + POINTS_PER_QUESTION;
         setSessionPoints(newPoints);
@@ -699,6 +874,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     setAnswerInput('');
     setMultiInputs([]);
     setFocusedPartIndex(null);
+    setSelectedChoiceIndex(null);
     setAnswerState('idle');
     setTimeout(() => inputRef.current?.focus(), 100);
   }
@@ -814,7 +990,9 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
     const isBusy = isCorrect || isWrong || skipping;
     const skipsLeft = 2 - skipsUsed;
     const isMultiAnswer = Array.isArray(currentQ.answers) && (currentQ.answers?.length ?? 0) > 0;
-    const isFractionQ = currentQ.type === 'fraction';
+    const isMultiChoiceQ = currentQ.type === 'multiple_choice';
+    const isFractionQ = currentQ.type === 'fraction' || currentQ.type === 'comparison';
+    const isComparisonQ = currentQ.type === 'comparison' || (currentQ.type === 'fraction' && COMPARISON_SYMBOLS.has(currentQ.answer_text ?? ''));
     const allInputsFilled = isMultiAnswer
       ? multiInputs.length === currentQ.answers!.length &&
         multiInputs.every((v) => v.trim() !== '')
@@ -903,7 +1081,20 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
 
             {/* Answer inputs */}
             {!isCorrect && (
-              isMultiAnswer ? (
+              isMultiChoiceQ && currentQ.choices ? (
+                <MultipleChoiceButtons
+                  options={currentQ.choices.options}
+                  correctIndex={currentQ.choices.correct_index}
+                  selectedIndex={selectedChoiceIndex}
+                  answerState={answerState}
+                  onSelect={(i) => {
+                    if (!isBusy) {
+                      setSelectedChoiceIndex(i);
+                      void handleCheckAnswer(String(i));
+                    }
+                  }}
+                />
+              ) : isMultiAnswer ? (
                 <div className="flex flex-col gap-3 mt-2 w-full">
                   {currentQ.order_matters === false ? (
                     <p className="text-indigo-400 text-xs font-semibold text-center">
@@ -976,6 +1167,20 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
                     />
                   )}
                 </div>
+              ) : isComparisonQ ? (
+                /* ── Comparison input (<, =, >) ── */
+                <div className="flex flex-col items-center w-full mt-2">
+                  <div className="w-full border-4 border-violet-300 rounded-2xl py-3 px-4 bg-violet-50 min-h-[56px] flex items-center justify-center">
+                    {answerInput
+                      ? <span className="text-3xl font-extrabold text-violet-700">{answerInput}</span>
+                      : <span className="text-gray-300 text-lg font-semibold">Chọn dấu...</span>
+                    }
+                  </div>
+                  <ComparisonKeyboard
+                    onSelect={(s) => { if (!isBusy) { setAnswerInput(s); void handleCheckAnswer(s); } }}
+                    disabled={isBusy}
+                  />
+                </div>
               ) : isFractionQ ? (
                 /* ── Fraction input with custom keyboard (Step 3) ── */
                 <div className="flex flex-col items-center w-full mt-2">
@@ -1015,7 +1220,7 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
                     </span>
                   )}
                   <button
-                    onClick={handleCheckAnswer}
+                    onClick={() => { void handleCheckAnswer(); }}
                     disabled={!answerInput.trim() || isBusy}
                     className="btn-scale flex-shrink-0 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 text-white font-extrabold text-xl px-4 rounded-2xl py-3 shadow-md"
                   >
@@ -1032,10 +1237,10 @@ export default function StudentMode({ onSwitchToParent }: StudentModeProps) {
             )}
           </div>
 
-          {/* Check button */}
-          {!isCorrect && !isBusy && (
+          {/* Check button — hidden for comparison/multiple-choice (auto-submit on tap) */}
+          {!isCorrect && !isBusy && !isComparisonQ && !isMultiChoiceQ && (
             <button
-              onClick={handleCheckAnswer}
+              onClick={() => { void handleCheckAnswer(); }}
               disabled={!allInputsFilled}
               className="btn-scale w-full max-w-md py-5 rounded-3xl bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-600 hover:to-violet-600 disabled:opacity-40 text-white font-extrabold text-2xl shadow-xl border border-indigo-400"
             >

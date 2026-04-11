@@ -26,6 +26,10 @@ export async function generateExercises(
 
   const systemPrompt = `You are a math teacher for Vietnamese primary school students (ages 6-11). Analyze the uploaded textbook image and generate math exercises. Always respond in Vietnamese. Return ONLY a valid JSON array, no explanation, no markdown.
 
+CRITICAL — SELF-CONTAINED QUESTIONS ONLY: Students cannot see the textbook image. Every question MUST contain all necessary information inline. NEVER reference figures, images, tables, or diagrams (e.g. "Hình 1", "Hình 2", "bảng sau", "hình vẽ", "hình bên"). Instead, extract the relevant numbers/data FROM the image and embed them directly in the question text.
+WRONG: "Dựa vào Hình 1 (có 3/4 phần tô màu) và Hình 2..." → this references a figure the student cannot see
+CORRECT: "So sánh 3/4 và 7/12. Điền dấu thích hợp (<, >, =)." → all info is in the question text
+
 RULE — Use multi_answer for any question requiring more than one number:
 - "Tìm hai số..." / "Tìm các số..." / "...là những số nào?" / "Tìm số..."
 - "Tính ... và ..." (e.g. tính chu vi VÀ diện tích)
@@ -71,7 +75,23 @@ FRACTION RULE — Use type "fraction" when the answer is a fraction:
 - "Điền phân số thích hợp" → type: "fraction", answer_text: "a/b"
 - "Viết phân số..." → type: "fraction", answer_text: "a/b"
 - NEVER store a fraction answer as a decimal in the "answer" field
-- answer_text MUST be in the format "numerator/denominator" (e.g. "3/5", "7/8", "1/2")`;
+- answer_text MUST be in the format "numerator/denominator" (e.g. "3/5", "7/8", "1/2")
+
+MULTIPLE CHOICE RULE — Use type "multiple_choice" for ANY question that CANNOT be answered with a number, fraction, or comparison symbol (<, >, =):
+- Sorting/ordering: "Sắp xếp các phân số từ bé đến lớn: 1/2, 3/4, 5/8" → multiple_choice with all permutations as options
+- True/False: "3/4 > 1/2. Đúng hay sai?" → multiple_choice with ["Đúng", "Sai"]
+- Name-based answers: "Ai đọc sách ít thời gian nhất?" → multiple_choice with name options
+- Select the right item: "Phân số nào lớn hơn 1?" → multiple_choice
+- Any question where the answer is not a pure number, fraction a/b, or symbol
+Format: { "question": "...", "type": "multiple_choice", "difficulty": "...", "choices": { "options": ["opt1", "opt2", "opt3", "opt4"], "correct_index": N } }
+Rules: Always 3–4 options. correct_index is 0-based. Wrong options must be plausible. Randomize the correct option's position — do NOT always put it at index 0.
+
+TYPE SELECTION PRIORITY (in order):
+1. Answer is a single number → single_answer (with "answer" field)
+2. Answer is a fraction a/b → fraction (with "answer_text" field)
+3. Answer requires multiple numbers/fractions → multi_answer
+4. Answer is a comparison symbol (<, >, =) → type: "comparison", answer: null, answer_text: "<" or ">" or "=" (NEVER answer: 0)
+5. EVERYTHING ELSE → multiple_choice`;
 
   const userPrompt = `Look at this textbook page and generate exactly ${count} math exercises based on the content.${prevNote}
 Return ONLY a valid JSON array, nothing else. Each item uses ONE of these formats:
@@ -94,7 +114,16 @@ Multi-answer with generic labels (e.g. 2 interchangeable numbers, no bigger/smal
 
 For word problems requiring multiple distinct calculations, use multi_answer. For single calculations, use single answer format.
 For fraction questions (rút gọn, tính phân số, so sánh phân số, điền phân số), use type "fraction" with "answer_text" as a string like "3/5".
-For word problems with a unit, set "unit" to the appropriate unit (e.g. "kg", "km", "cai", "m").`;
+For word problems with a unit, set "unit" to the appropriate unit (e.g. "kg", "km", "cai", "m").
+
+Comparison symbol (điền dấu <, >, =): QUAN TRỌNG — answer phải là null, answer_text phải là "<" hoặc ">" hoặc "=":
+{ "question": "So sánh hai phân số: 2/5 và 3/5. Điền dấu thích hợp (<, >, =).", "type": "comparison", "difficulty": "easy", "answer": null, "answer_text": "<" }
+{ "question": "3/4 ... 1/2 (điền dấu)", "type": "comparison", "difficulty": "easy", "answer": null, "answer_text": ">" }
+KHÔNG được đặt answer: 0 cho câu so sánh. answer_text BẮT BUỘC là "<", ">", hoặc "=".
+
+Multiple choice (for sorting/ordering, true/false, name answers, or any question that CANNOT be answered with a number, fraction, or symbol):
+{ "question": "Sắp xếp các phân số sau từ bé đến lớn: 1/2, 3/4, 5/8", "type": "multiple_choice", "difficulty": "medium", "choices": { "options": ["1/2, 5/8, 3/4", "3/4, 5/8, 1/2", "5/8, 1/2, 3/4", "1/2, 3/4, 5/8"], "correct_index": 0 } }
+{ "question": "3/4 > 1/2. Đúng hay sai?", "type": "multiple_choice", "difficulty": "easy", "choices": { "options": ["Đúng", "Sai"], "correct_index": 0 } }`;
 
   const imageParts = images.map((img) => ({
     inlineData: { data: img.base64, mimeType: img.mimeType },
@@ -143,6 +172,10 @@ Return ONLY JSON:
     prompt = `Generate 1 similar fraction math question to: "${originalQuestion}". Same difficulty (${difficulty}). Vietnamese.
 The answer must be a fraction string like "3/5". Return ONLY JSON:
 { "question": "...", "answer_text": "a/b", "type": "fraction", "difficulty": "${difficulty}", "unit": "" }`;
+  } else if (type === 'multiple_choice') {
+    prompt = `Generate 1 similar multiple-choice math question to: "${originalQuestion}". Same difficulty (${difficulty}). Vietnamese.
+Provide 3–4 plausible options. Return ONLY JSON:
+{ "question": "...", "type": "multiple_choice", "difficulty": "${difficulty}", "choices": { "options": ["opt1", "opt2", "opt3"], "correct_index": 0 } }`;
   } else {
     prompt = `Generate 1 similar math question to: "${originalQuestion}". Same type (${type}), same difficulty (${difficulty}). Vietnamese. Return ONLY JSON:
 { "question": "...", "answer": 0, "type": "${type}", "difficulty": "${difficulty}", "unit": "" }`;

@@ -22,6 +22,7 @@ interface GeneratedQuestion {
   answer_text?: string;
   answers?: AnswerPart[];
   order_matters?: boolean;
+  choices?: { options: string[]; correct_index: number };
   type: string;
   difficulty: string;
   unit?: string;
@@ -188,7 +189,11 @@ function SuccessView({
         ) : (
           <ul className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
             {questions.map((q, i) => {
-              const answerDisplay = q.type === 'multi_answer' && q.answers
+              const answerDisplay = q.type === 'multiple_choice' && q.choices
+                ? `${['A','B','C','D'][q.choices.correct_index]}) ${q.choices.options[q.choices.correct_index]}`
+                : q.type === 'comparison'
+                ? (q.answer_text || String(q.answer ?? ''))
+                : q.type === 'multi_answer' && q.answers
                 ? q.answers.map(a => {
                     const val = a.answer !== undefined ? `${a.answer}` : (a.answer_text ?? '?');
                     return `${a.label}: ${val}${a.unit ? ' ' + a.unit : ''}`;
@@ -310,7 +315,11 @@ function QuestionsView({ onBack, studentId }: { onBack: () => void; studentId: n
         ) : (
           <ul className="divide-y divide-gray-50 max-h-[60vh] overflow-y-auto">
             {questions.map((q, i) => {
-              const answerDisplay = q.type === 'multi_answer' && q.answers
+              const answerDisplay = q.type === 'multiple_choice' && q.choices
+                ? `${['A','B','C','D'][q.choices.correct_index]}) ${q.choices.options[q.choices.correct_index]}`
+                : q.type === 'comparison'
+                ? (q.answer_text || String(q.answer ?? ''))
+                : q.type === 'multi_answer' && q.answers
                 ? q.answers.map(a => `${a.label}: ${a.answer_text ?? a.answer ?? '?'}${a.unit ? ' ' + a.unit : ''}`).join(' | ')
                 : q.type === 'fraction'
                 ? (q.answer_text || 'N/A')

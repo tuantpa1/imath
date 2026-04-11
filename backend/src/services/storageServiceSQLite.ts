@@ -11,6 +11,7 @@ import {
   MultiAnswerQuestion,
   SingleAnswerQuestion,
   FractionQuestion,
+  MultipleChoiceQuestion,
   Rewards,
 } from './storageService';
 
@@ -27,6 +28,7 @@ export interface RawClaudeQuestion {
   answer_text?: string;  // fraction questions: "3/5"
   answers?: Array<{ label: string; answer: number; unit: string }>;
   order_matters?: boolean;
+  choices?: { options: string[]; correct_index: number };  // multiple_choice
   unit?: string;
 }
 
@@ -180,6 +182,13 @@ export function readExercises(studentId: number): Exercises {
     }>;
 
     const questions: Question[] = questionRows.map((q) => {
+      if (q.type === 'multiple_choice' && q.answers_json) {
+        const mc: MultipleChoiceQuestion = {
+          id: q.id, question: q.question_text, type: 'multiple_choice', difficulty: q.difficulty,
+          choices: JSON.parse(q.answers_json) as { options: string[]; correct_index: number }, unit: q.unit,
+        };
+        return mc;
+      }
       if (q.type === 'multi_answer' && q.answers_json) {
         const multi: MultiAnswerQuestion = {
           id: q.id, question: q.question_text, type: 'multi_answer', difficulty: q.difficulty,
@@ -194,9 +203,13 @@ export function readExercises(studentId: number): Exercises {
         };
         return frac;
       }
+      // For comparison rows: answer column may hold the symbol as a string (old data) or answer_text may hold it
+      const singleAnswerText = q.type === 'comparison'
+        ? (q.answer_text ?? (q.answer !== null && q.answer !== undefined ? String(q.answer) : undefined))
+        : (q.answer_text ?? undefined);
       const single: SingleAnswerQuestion = {
         id: q.id, question: q.question_text, type: q.type, difficulty: q.difficulty,
-        answer: q.answer ?? 0, unit: q.unit,
+        answer: q.answer ?? 0, answer_text: singleAnswerText, unit: q.unit,
       };
       return single;
     });
@@ -268,8 +281,14 @@ export function createSession(
     );
     rawQuestions.forEach((q, i) => {
       const qId = `${sessionId}_q${i + 1}`;
-      if (q.answers) {
+      if (q.type === 'multiple_choice' && q.choices) {
+        insertQ.run(qId, sessionId, q.question, 'multiple_choice', q.difficulty, null, null, JSON.stringify(q.choices), 1, q.unit ?? '');
+      } else if (q.answers) {
         insertQ.run(qId, sessionId, q.question, 'multi_answer', q.difficulty, null, null, JSON.stringify(q.answers), (q.order_matters ?? true) ? 1 : 0, q.unit ?? '');
+      } else if (q.type === 'comparison') {
+        // AI may put the symbol in answer_text or (incorrectly) in answer — normalise to answer_text
+        const symbol = q.answer_text ?? (q.answer !== null && q.answer !== undefined ? String(q.answer) : null);
+        insertQ.run(qId, sessionId, q.question, 'comparison', q.difficulty, null, symbol, null, 1, q.unit ?? '');
       } else if (q.type === 'fraction' && q.answer_text) {
         insertQ.run(qId, sessionId, q.question, 'fraction', q.difficulty, null, q.answer_text, null, 1, q.unit ?? '');
       } else {
@@ -281,6 +300,10 @@ export function createSession(
 
   const questions: Question[] = rawQuestions.map((q, i) => {
     const qId = `${sessionId}_q${i + 1}`;
+    if (q.type === 'multiple_choice' && q.choices) {
+      const mc: MultipleChoiceQuestion = { id: qId, question: q.question, type: 'multiple_choice', difficulty: q.difficulty, choices: q.choices, unit: q.unit ?? '' };
+      return mc;
+    }
     if (q.answers) {
       const m: MultiAnswerQuestion = { id: qId, question: q.question, type: 'multi_answer', difficulty: q.difficulty, order_matters: q.order_matters ?? true, answers: q.answers, unit: q.unit ?? '' };
       return m;
@@ -289,7 +312,10 @@ export function createSession(
       const f: FractionQuestion = { id: qId, question: q.question, type: 'fraction', difficulty: q.difficulty, answer_text: q.answer_text, unit: q.unit ?? '' };
       return f;
     }
-    const s: SingleAnswerQuestion = { id: qId, question: q.question, type: q.type, difficulty: q.difficulty, answer: q.answer ?? 0, unit: q.unit ?? '' };
+    const answerText = q.type === 'comparison'
+      ? (q.answer_text ?? (q.answer !== null && q.answer !== undefined ? String(q.answer) : undefined))
+      : q.answer_text;
+    const s: SingleAnswerQuestion = { id: qId, question: q.question, type: q.type, difficulty: q.difficulty, answer: q.answer ?? 0, answer_text: answerText, unit: q.unit ?? '' };
     return s;
   });
 
@@ -384,7 +410,9 @@ export function createSessionForAllStudents(
       );
       rawQuestions.forEach((q, i) => {
         const qId = `${sessionId}_q${i + 1}`;
-        if (q.answers) {
+        if (q.type === 'multiple_choice' && q.choices) {
+          insertQ.run(qId, sessionId, q.question, 'multiple_choice', q.difficulty, null, null, JSON.stringify(q.choices), 1, q.unit ?? '');
+        } else if (q.answers) {
           insertQ.run(qId, sessionId, q.question, 'multi_answer', q.difficulty, null, null, JSON.stringify(q.answers), (q.order_matters ?? true) ? 1 : 0, q.unit ?? '');
         } else if (q.type === 'fraction' && q.answer_text) {
           insertQ.run(qId, sessionId, q.question, 'fraction', q.difficulty, null, q.answer_text, null, 1, q.unit ?? '');

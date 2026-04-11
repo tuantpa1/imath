@@ -76,6 +76,7 @@ interface GeneratedQuestion {
   answer_text?: string;
   answers?: Array<{ label: string; answer?: number; answer_text?: string; unit: string }>;
   order_matters?: boolean;
+  choices?: { options: string[]; correct_index: number };
   unit?: string;
 }
 
@@ -582,6 +583,8 @@ function GenerateTab() {
   };
 
   const formatAnswer = (q: GeneratedQuestion): string => {
+    if (q.type === 'multiple_choice' && q.choices) return `${['A','B','C','D'][q.choices.correct_index]}) ${q.choices.options[q.choices.correct_index]}`;
+    if (q.type === 'comparison') return q.answer_text || String(q.answer ?? '');
     if (q.answers) return q.answers.map((a) => `${a.label}: ${a.answer_text ?? a.answer ?? '?'}${a.unit ? ' ' + a.unit : ''}`).join(' | ');
     if (q.answer_text) return q.answer_text;
     if (q.answer !== undefined) return String(q.answer) + (q.unit ? ' ' + q.unit : '');
@@ -845,7 +848,12 @@ function GenerateTab() {
                               answers_json: string | null; unit: string;
                             };
                             let answerStr = '?';
-                            if (dbQ.answers_json) {
+                            if (dbQ.answers_json && dbQ.type === 'multiple_choice') {
+                              try {
+                                const mc = JSON.parse(dbQ.answers_json) as { options: string[]; correct_index: number };
+                                answerStr = `${['A','B','C','D'][mc.correct_index]}) ${mc.options[mc.correct_index]}`;
+                              } catch { answerStr = dbQ.answers_json; }
+                            } else if (dbQ.answers_json) {
                               try {
                                 const parts = JSON.parse(dbQ.answers_json) as Array<{ label: string; answer?: number; answer_text?: string; unit?: string }>;
                                 answerStr = parts.map((p) => `${p.label}: ${p.answer_text ?? p.answer ?? '?'}${p.unit ? ' ' + p.unit : ''}`).join(' | ');

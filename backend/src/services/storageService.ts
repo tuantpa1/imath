@@ -49,6 +49,7 @@ export interface SingleAnswerQuestion {
   type: string;
   difficulty: 'easy' | 'medium' | 'hard';
   answer: number;
+  answer_text?: string;  // comparison questions: "<", ">", "="
   unit: string;
 }
 
@@ -71,7 +72,16 @@ export interface MultiAnswerQuestion {
   unit?: string;
 }
 
-export type Question = SingleAnswerQuestion | FractionQuestion | MultiAnswerQuestion;
+export interface MultipleChoiceQuestion {
+  id: string;
+  question: string;
+  type: 'multiple_choice';
+  difficulty: 'easy' | 'medium' | 'hard';
+  choices: { options: string[]; correct_index: number };
+  unit?: string;
+}
+
+export type Question = SingleAnswerQuestion | FractionQuestion | MultiAnswerQuestion | MultipleChoiceQuestion;
 
 export interface Session {
   id: string;
