@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api, ApiError } from '../services/apiService';
 import { authService } from '../services/authService';
+import TeacherIRead from '../components/iread/TeacherIRead';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface StudentRow {
@@ -80,7 +81,7 @@ interface GeneratedQuestion {
   unit?: string;
 }
 
-type Tab = 'class' | 'students' | 'generate';
+type Tab = 'class' | 'students' | 'generate' | 'iread';
 
 const TEACHER = '/api/teacher';
 
@@ -891,9 +892,10 @@ function GenerateTab() {
 
 // ── Main TeacherView ───────────────────────────────────────────────────────────
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'class',    label: '📊 Lớp của tôi' },
+  { key: 'class',    label: '📊 Lớp' },
   { key: 'students', label: '👦 Học sinh' },
-  { key: 'generate', label: '📚 Giao bài' },
+  { key: 'generate', label: '📐 Giao bài' },
+  { key: 'iread',    label: '📚 iRead' },
 ];
 
 interface TeacherViewProps {
@@ -949,6 +951,7 @@ export default function TeacherView({ onLogout }: TeacherViewProps) {
         {tab === 'class'    && <ClassTab />}
         {tab === 'students' && <StudentsTab />}
         {tab === 'generate' && <GenerateTab />}
+        {tab === 'iread'    && <TeacherIRead />}
       </div>
     </div>
   );
