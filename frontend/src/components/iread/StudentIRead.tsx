@@ -289,8 +289,14 @@ export default function StudentIRead() {
         <div className="flex-1 overflow-y-auto px-6 py-8 max-w-2xl mx-auto w-full">
           {page?.extracted_text ? (
             <p
-              className="text-gray-800 whitespace-pre-wrap"
-              style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: '17px', lineHeight: '1.9' }}
+              className="whitespace-pre-wrap"
+              style={{
+                fontFamily: "'Lora', Georgia, serif",
+                fontSize: '17px',
+                lineHeight: '1.9',
+                letterSpacing: '0.01em',
+                color: '#2C1810',
+              }}
             >
               {page.extracted_text}
             </p>

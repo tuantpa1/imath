@@ -153,6 +153,7 @@ export async function extractTextFromImage(imageBase64: string, mimeType: string
   const prompt = `You are an OCR assistant. Extract ALL text from this book page image accurately.
 - Preserve paragraph breaks with double newlines
 - Preserve the original Vietnamese/English text exactly as written
+- Return text with properly composed Vietnamese diacritics (NFC Unicode form)
 - Do not add any commentary or explanation
 - Return only the extracted text, nothing else`;
 
@@ -160,7 +161,7 @@ export async function extractTextFromImage(imageBase64: string, mimeType: string
     prompt,
     { inlineData: { data: imageBase64, mimeType } },
   ]);
-  return result.response.text().trim();
+  return result.response.text().trim().normalize('NFC');
 }
 
 // ── iRead: Question generation ────────────────────────────────────────────────

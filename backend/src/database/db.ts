@@ -47,6 +47,25 @@ export function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
+// One-time fix: normalize existing extracted_text to NFC
+try {
+  const pages = db.prepare(
+    'SELECT id, extracted_text FROM story_pages WHERE extracted_text IS NOT NULL'
+  ).all() as { id: number; extracted_text: string }[];
+  const updateStmt = db.prepare('UPDATE story_pages SET extracted_text = ? WHERE id = ?');
+  let fixed = 0;
+  for (const page of pages) {
+    const normalized = page.extracted_text.normalize('NFC');
+    if (normalized !== page.extracted_text) {
+      updateStmt.run(normalized, page.id);
+      fixed++;
+    }
+  }
+  if (fixed > 0) console.log(`[DB] NFC-normalized ${fixed} story page(s)`);
+} catch (e) {
+  console.log('[DB] NFC migration skipped:', e);
+}
+
 // Migration: rebuild users table if CHECK constraint doesn't include 'admin'
 const usersSchema = db.prepare(
   "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
