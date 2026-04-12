@@ -9,6 +9,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import TeacherView from './pages/TeacherView';
 import ModuleSwitcher from './components/ModuleSwitcher';
 import IReadComingSoon from './components/iread/IReadComingSoon';
+import StudentIRead from './components/iread/StudentIRead';
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
@@ -47,7 +48,7 @@ function App() {
     <div className="min-h-screen bg-gray-50">
       <ModuleSwitcher activeModule={activeModule} onSwitch={setActiveModule} />
       {activeModule === 'iread' ? (
-        <IReadComingSoon />
+        user.role === 'student' ? <StudentIRead /> : <IReadComingSoon />
       ) : user.role === 'student' ? (
         <StudentMode onSwitchToParent={handleLogout} />
       ) : (
