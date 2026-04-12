@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { api, ApiError } from '../services/apiService';
+import ParentIRead from '../components/iread/ParentIRead';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface Child {
@@ -53,7 +54,7 @@ interface ScoresData {
   wrongQuestions: WrongQuestion[];
 }
 
-type ParentView = 'dashboard' | 'upload' | 'scores' | 'questions';
+type ParentView = 'dashboard' | 'upload' | 'scores' | 'questions' | 'iread';
 type UploadState = 'idle' | 'loading' | 'success' | 'error';
 
 interface ParentModeProps {
@@ -748,6 +749,14 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
                   <span className="text-2xl">📊</span>
                   <span>Xem Điểm Của Bé</span>
                 </button>
+
+                <button
+                  onClick={() => setView('iread')}
+                  className="btn-scale w-full py-5 rounded-3xl bg-gradient-to-r from-emerald-400 to-teal-600 text-white font-extrabold text-lg shadow-xl border border-emerald-300 flex items-center justify-center gap-3"
+                >
+                  <span className="text-2xl">📚</span>
+                  <span>iRead — Đọc Sách</span>
+                </button>
               </div>
             </>
           )}
@@ -789,6 +798,23 @@ export default function ParentMode({ onExitToStudent }: ParentModeProps) {
           {selectedChildId !== null && (
             <QuestionsView onBack={() => setView('dashboard')} studentId={selectedChildId} />
           )}
+        </main>
+      </div>
+    );
+  }
+
+  // ── iRead view ───────────────────────────────────────────────────────────────
+  if (view === 'iread') {
+    return (
+      <div className={bgClass}>
+        <Header
+          onExitToStudent={onExitToStudent}
+          children={childList}
+          selectedChildId={selectedChildId}
+          onChildChange={setSelectedChildId}
+        />
+        <main className="flex-1 flex flex-col items-center px-4 py-5 gap-4 overflow-y-auto">
+          <ParentIRead onBack={() => setView('dashboard')} />
         </main>
       </div>
     );
