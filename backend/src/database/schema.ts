@@ -112,4 +112,74 @@ export const SCHEMA_SQL = `
     FOREIGN KEY (teacher_id) REFERENCES users(id),
     FOREIGN KEY (student_id) REFERENCES users(id)
   );
+
+  -- iRead: Stories uploaded by teacher/parent
+  CREATE TABLE IF NOT EXISTS stories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    language TEXT NOT NULL CHECK(language IN ('vi', 'en')),
+    level TEXT NOT NULL DEFAULT 'elementary',
+    cover_image_url TEXT,
+    created_by INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    is_active INTEGER DEFAULT 1,
+    total_pages INTEGER DEFAULT 0,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+  );
+
+  -- iRead: Individual scanned pages of a story
+  CREATE TABLE IF NOT EXISTS story_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    story_id INTEGER NOT NULL,
+    page_number INTEGER NOT NULL,
+    image_url TEXT NOT NULL,
+    extracted_text TEXT,
+    ocr_status TEXT DEFAULT 'pending' CHECK(ocr_status IN ('pending', 'processing', 'done', 'failed')),
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (story_id) REFERENCES stories(id)
+  );
+
+  -- iRead: Auto-generated comprehension questions per story
+  CREATE TABLE IF NOT EXISTS reading_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    story_id INTEGER NOT NULL,
+    question_text TEXT NOT NULL,
+    option_a TEXT NOT NULL,
+    option_b TEXT NOT NULL,
+    option_c TEXT NOT NULL,
+    option_d TEXT NOT NULL,
+    correct_option TEXT NOT NULL CHECK(correct_option IN ('a', 'b', 'c', 'd')),
+    explanation TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (story_id) REFERENCES stories(id)
+  );
+
+  -- iRead: Story assignments (teacher assigns story to student)
+  CREATE TABLE IF NOT EXISTS story_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    story_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    assigned_by INTEGER NOT NULL,
+    assigned_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(story_id, student_id),
+    FOREIGN KEY (story_id) REFERENCES stories(id),
+    FOREIGN KEY (student_id) REFERENCES users(id),
+    FOREIGN KEY (assigned_by) REFERENCES users(id)
+  );
+
+  -- iRead: Student reading + quiz progress per story
+  CREATE TABLE IF NOT EXISTS reading_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    story_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'not_started' CHECK(status IN ('not_started', 'reading', 'quiz', 'completed')),
+    current_page INTEGER DEFAULT 1,
+    score INTEGER DEFAULT 0,
+    total_questions INTEGER DEFAULT 0,
+    correct_answers INTEGER DEFAULT 0,
+    started_at TEXT,
+    completed_at TEXT,
+    FOREIGN KEY (story_id) REFERENCES stories(id),
+    FOREIGN KEY (student_id) REFERENCES users(id)
+  );
 `;

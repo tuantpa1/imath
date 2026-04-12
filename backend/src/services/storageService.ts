@@ -35,6 +35,7 @@ export interface Scores {
   history: ScoreHistory[];
   redeemed: ScoreRedeemed[];
   wrongQuestions: WrongQuestion[];
+  moduleBreakdown?: { imath: number; iread: number };
 }
 
 export interface AnswerPart {

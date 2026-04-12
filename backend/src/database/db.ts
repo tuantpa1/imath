@@ -27,6 +27,21 @@ try {
 } catch {
   // Column already exists — ignore
 }
+try {
+  db.exec(`ALTER TABLE sessions ADD COLUMN module TEXT DEFAULT 'imath'`);
+} catch {
+  // Column already exists — ignore
+}
+try {
+  db.exec(`ALTER TABLE scores ADD COLUMN module TEXT DEFAULT 'imath'`);
+} catch {
+  // Column already exists — ignore
+}
+try {
+  db.exec(`ALTER TABLE score_history ADD COLUMN module TEXT DEFAULT 'imath'`);
+} catch {
+  // Column already exists — ignore
+}
 
 export function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');

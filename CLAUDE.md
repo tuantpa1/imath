@@ -1,11 +1,14 @@
-# iMath — Math Learning Platform for Primary School Students
+# iLearn — Multi-Module Learning Platform for Primary School Students
 
 ## Project Overview
-Web application to help primary school children (ages 6–11) practice math.
-Parents upload textbook photos → Claude AI generates exercises → Children complete them and earn reward points.
+Web application to help primary school children (ages 6–11) learn through two modules:
+- **iMath (module 1):** Parents/teachers upload textbook photos → Claude/Gemini AI generates math exercises → Children complete them and earn reward points.
+- **iRead (module 2):** Teachers/parents upload story books → AI generates reading comprehension questions → Children read and answer to earn points.
+
+Shared across modules: users, roles, points system, rewards, class management.
 
 ## Status
-**V2 complete.** 4 roles (admin/teacher/parent/student), class-scoped teacher routes, AdminDashboard (7 tabs), TeacherView (3 tabs), teacher_students table for class assignment. Session history preserved via `superseded` flag — new teacher tasks no longer wipe old incomplete ones from history.
+**iMath V2 complete.** 4 roles (admin/teacher/parent/student), class-scoped teacher routes, AdminDashboard (7 tabs), TeacherView (3 tabs), teacher_students table for class assignment. Session history preserved via `superseded` flag — new teacher tasks no longer wipe old incomplete ones from history. iRead Phase 0 database schema added (stories, story_pages, reading_questions, story_assignments, reading_sessions tables). `module` column added to sessions/scores/score_history tables for per-module point tracking.
 
 ## Tech Stack
 - **Frontend:** React + TypeScript (port 3000)

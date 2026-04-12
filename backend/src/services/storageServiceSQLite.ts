@@ -130,11 +130,19 @@ export function readScores(studentId: number): Scores {
     return { question: r.question_text, type: r.type || 'single', correctAnswer: r.correct_answer, studentAnswer: r.student_answer, date };
   });
 
+  const mathPoints = db.prepare(
+    `SELECT COALESCE(SUM(points_change), 0) AS total FROM score_history WHERE student_id = ? AND module = 'imath' AND points_change > 0`
+  ).get(studentId) as { total: number };
+  const readPoints = db.prepare(
+    `SELECT COALESCE(SUM(points_change), 0) AS total FROM score_history WHERE student_id = ? AND module = 'iread' AND points_change > 0`
+  ).get(studentId) as { total: number };
+
   return {
     totalPoints: earnedRow.total - redeemedRow.total,
     history,
     redeemed,
     wrongQuestions,
+    moduleBreakdown: { imath: mathPoints.total, iread: readPoints.total },
   };
 }
 
