@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { generateExercises, generateSkip } from '../services/aiService';
 import type { ValidMime } from '../services/claudeService';
-import { createSession, createSessionForAllStudents, getTeacherStudentIds, distributeSessionToStudents, hasIncompleteTeacherSession } from '../services/storageServiceSQLite';
+import { createSession, createSessionForAllStudents, getTeacherStudentIds, distributeSessionToStudents, hasIncompleteTeacherSession, readExercises } from '../services/storageServiceSQLite';
 import type { AuthRequest } from '../middleware/authMiddleware';
 import { resolveStudentId } from '../middleware/resolveStudent';
 import { checkAndIncrement, RateLimitError, getUserGenerateLimit } from '../services/rateLimitService';
@@ -173,7 +173,10 @@ router.post('/generate-extra', async (req: Request, res: Response) => {
 
     const numCount = parseInt(String(count ?? '10'), 10) || 10;
     const { questions: rawQuestions } = await generateExercises(images, numCount, previousQuestions ?? []);
-    const session = createSession(studentId, authReq.user.userId, imagePaths, rawQuestions, true);
+    const created = createSession(studentId, authReq.user.userId, imagePaths, rawQuestions, true);
+    // Re-read from DB so question mapping (multiple_choice choices, comparison answer_text) is authoritative
+    const { sessions } = readExercises(studentId);
+    const session = sessions.find((s) => s.id === created.id) ?? created;
     res.json({ ok: true, session });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
