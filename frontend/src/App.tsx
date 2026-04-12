@@ -7,9 +7,12 @@ import StudentMode from './pages/StudentMode';
 import ParentMode from './pages/ParentMode';
 import AdminDashboard from './pages/AdminDashboard';
 import TeacherView from './pages/TeacherView';
+import ModuleSwitcher from './components/ModuleSwitcher';
+import IReadComingSoon from './components/iread/IReadComingSoon';
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
+  const [activeModule, setActiveModule] = useState<'imath' | 'iread'>('imath');
 
   // Auto-logout when any API call returns 401 (expired/invalid token)
   useEffect(() => {
@@ -23,20 +26,14 @@ function App() {
   const handleLogout = () => {
     authService.logout();
     setUser(null);
+    setActiveModule('imath');
   };
 
   if (!user) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
-  if (user.role === 'student') {
-    return <StudentMode onSwitchToParent={handleLogout} />;
-  }
-
-  if (user.role === 'parent') {
-    return <ParentMode onExitToStudent={handleLogout} />;
-  }
-
+  // Admin and teacher roles: no module switcher, direct to their dashboards
   if (user.role === 'admin') {
     return <AdminDashboard onLogout={handleLogout} />;
   }
@@ -45,7 +42,19 @@ function App() {
     return <TeacherView onLogout={handleLogout} />;
   }
 
-  return null;
+  // Student and parent roles: show module switcher
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <ModuleSwitcher activeModule={activeModule} onSwitch={setActiveModule} />
+      {activeModule === 'iread' ? (
+        <IReadComingSoon />
+      ) : user.role === 'student' ? (
+        <StudentMode onSwitchToParent={handleLogout} />
+      ) : (
+        <ParentMode onExitToStudent={handleLogout} />
+      )}
+    </div>
+  );
 }
 
 export default App;

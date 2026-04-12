@@ -34,8 +34,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
         {/* Logo */}
         <div className="text-center">
           <div className="text-7xl mb-2">🌟</div>
-          <h1 className="text-4xl font-extrabold text-white drop-shadow-md">iMath</h1>
-          <p className="text-blue-100 font-semibold mt-1">Học Toán Thật Vui!</p>
+          <h1 className="text-4xl font-extrabold text-white drop-shadow-md">iLearn</h1>
+          <p className="text-blue-100 font-semibold mt-1">Toán • Đọc sách • Khám phá</p>
         </div>
 
         {/* Login card */}
