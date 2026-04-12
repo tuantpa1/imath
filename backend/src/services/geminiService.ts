@@ -147,6 +147,100 @@ Multiple choice (for sorting/ordering, true/false, name answers, or any question
   };
 }
 
+// ── iRead: OCR ───────────────────────────────────────────────────────────────
+
+export async function extractTextFromImage(imageBase64: string, mimeType: string): Promise<string> {
+  const prompt = `You are an OCR assistant. Extract ALL text from this book page image accurately.
+- Preserve paragraph breaks with double newlines
+- Preserve the original Vietnamese/English text exactly as written
+- Do not add any commentary or explanation
+- Return only the extracted text, nothing else`;
+
+  const result = await getModel().generateContent([
+    prompt,
+    { inlineData: { data: imageBase64, mimeType } },
+  ]);
+  return result.response.text().trim();
+}
+
+// ── iRead: Question generation ────────────────────────────────────────────────
+
+export interface ReadingQuestion {
+  question_text: string;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_option: 'a' | 'b' | 'c' | 'd';
+  explanation: string;
+}
+
+export async function generateReadingQuestions(
+  text: string,
+  language: 'vi' | 'en',
+  storyTitle: string
+): Promise<ReadingQuestion[]> {
+  let prompt: string;
+
+  if (language === 'vi') {
+    prompt = `Bạn là giáo viên tiểu học Việt Nam. Dựa trên đoạn văn sau, hãy tạo 5 câu hỏi trắc nghiệm đọc hiểu phù hợp cho học sinh tiểu học và cấp 2.
+
+Yêu cầu:
+- Câu hỏi phải bám sát nội dung bài đọc
+- 4 lựa chọn (A, B, C, D), chỉ 1 đáp án đúng
+- Độ khó vừa phải, phù hợp lứa tuổi 7-14 tuổi
+- Có giải thích ngắn gọn tại sao đáp án đúng
+- Câu hỏi đa dạng: nội dung chính, chi tiết, suy luận, từ ngữ
+
+Tên truyện: ${storyTitle}
+Nội dung bài đọc:
+${text}
+
+Trả về JSON array, KHÔNG có markdown backticks:
+[
+  {
+    "question_text": "...",
+    "option_a": "...",
+    "option_b": "...",
+    "option_c": "...",
+    "option_d": "...",
+    "correct_option": "a",
+    "explanation": "..."
+  }
+]`;
+  } else {
+    prompt = `You are an elementary school English teacher. Based on the following passage, create 5 multiple choice reading comprehension questions suitable for students aged 7-14.
+
+Requirements:
+- Questions must be based on the reading content
+- 4 options (A, B, C, D), only 1 correct answer
+- Appropriate difficulty for the age group
+- Include brief explanation for the correct answer
+- Varied question types: main idea, details, inference, vocabulary
+
+Story title: ${storyTitle}
+Reading passage:
+${text}
+
+Return JSON array only, NO markdown backticks:
+[
+  {
+    "question_text": "...",
+    "option_a": "...",
+    "option_b": "...",
+    "option_c": "...",
+    "option_d": "...",
+    "correct_option": "a",
+    "explanation": "..."
+  }
+]`;
+  }
+
+  const result = await getModel().generateContent(prompt);
+  const cleaned = cleanJson(result.response.text());
+  return JSON.parse(cleaned) as ReadingQuestion[];
+}
+
 // ── Skip question generation ──────────────────────────────────────────────────
 
 export async function generateSkip(
