@@ -345,6 +345,9 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
               <p className="font-bold text-gray-600 text-sm">Click hoặc kéo ảnh vào đây</p>
               <p className="text-xs text-gray-400 mt-1">Chọn nhiều ảnh cùng lúc (JPG, PNG, WebP)</p>
             </div>
+            <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+              💡 <span className="font-semibold">Mẹo:</span> Nên chụp từng trang riêng lẻ để OCR chính xác hơn. Nếu chụp 2 trang (sách mở), chỉ trang bên <span className="font-semibold">TRÁI</span> sẽ được nhận.
+            </p>
             <input
               ref={fileInputRef}
               type="file"

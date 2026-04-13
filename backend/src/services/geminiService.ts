@@ -152,16 +152,26 @@ Multiple choice (for sorting/ordering, true/false, name answers, or any question
 
 export async function extractTextFromImage(imageBase64: string, mimeType: string): Promise<string> {
   const prompt = `You are an OCR assistant for a children's book reading app.
-Extract the MAIN STORY TEXT from this book page image.
+This image may show ONE page or TWO pages of an open book.
 
-Rules:
-- Join lines that are part of the same sentence into one continuous line
+CRITICAL INSTRUCTION:
+- If the image shows TWO pages side by side (open book spread), extract ONLY the LEFT page text
+- The left page is the page on the LEFT side of the book spine/center fold
+- Completely IGNORE all text on the right page
+
+For the extracted page, follow these rules:
+- Join words/syllables that belong to the same sentence into continuous paragraphs
 - Separate paragraphs with a blank line
-- EXCLUDE page numbers, series titles, publisher info, hotlines, ISBNs, prices, website URLs
-- EXCLUDE decorative text boxes with moral lessons (e.g. "Lời mẹ nhắn gửi" boxes)
-- EXCLUDE headers and footers (page numbers, book series name at top/bottom)
-- Preserve Vietnamese diacritics in NFC Unicode form
-- Return ONLY the story text, nothing else`;
+- EXCLUDE all of the following (do not include them in output):
+  * Page numbers (standalone numbers like "6", "7", "109")
+  * Series/collection names ("109 câu chuyện", "về lòng nhân ái", etc.)
+  * Publisher info, hotlines, ISBNs, prices, website URLs
+  * Section headers in decorative boxes (e.g. "Lời mẹ nhắn gửi", "Bài học")
+  * The moral lesson text that appears in a separate box at the end of stories
+  * Any text that appears in a visually distinct box/frame separate from the main story
+  * Headers and footers at the very top or bottom of the page
+- Preserve Vietnamese diacritics correctly (NFC Unicode)
+- Return ONLY the main story text, nothing else, no commentary`;
 
   const result = await getModel().generateContent([
     prompt,

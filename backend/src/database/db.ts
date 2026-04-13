@@ -65,6 +65,14 @@ try {
   console.log('[DB] Text-clean migration skipped:', e);
 }
 
+// Log warning about potential double-page OCR issue for existing pages
+try {
+  const { c } = db.prepare('SELECT COUNT(*) as c FROM story_pages').get() as { c: number };
+  if (c > 0) {
+    console.log(`[DB] ⚠️  ${c} story page(s) exist. If any were photographed as open-book spreads, please re-upload those stories for accurate OCR.`);
+  }
+} catch { /* ignore */ }
+
 // Migration: rebuild users table if CHECK constraint doesn't include 'admin'
 const usersSchema = db.prepare(
   "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
