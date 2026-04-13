@@ -288,18 +288,23 @@ export default function StudentIRead() {
         {/* Text content */}
         <div className="flex-1 overflow-y-auto px-6 py-8 max-w-2xl mx-auto w-full">
           {page?.extracted_text ? (
-            <p
-              className="whitespace-pre-wrap"
-              style={{
-                fontFamily: "'Lora', Georgia, serif",
-                fontSize: '17px',
-                lineHeight: '1.9',
-                letterSpacing: '0.01em',
-                color: '#2C1810',
-              }}
-            >
-              {page.extracted_text}
-            </p>
+            <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: '17px', lineHeight: '1.9', letterSpacing: '0.01em', color: '#2C1810' }}>
+              {page.extracted_text.split('\n').map((para, idx) =>
+                para.trim() ? (
+                  <p
+                    key={idx}
+                    style={{
+                      marginBottom: '1.2em',
+                      textIndent: (!para.startsWith('\u201c') && !para.startsWith('"') && !para.startsWith('–') && !para.startsWith('-')) ? '1.5em' : '0',
+                    }}
+                  >
+                    {para}
+                  </p>
+                ) : (
+                  <div key={idx} style={{ height: '0.6em' }} />
+                )
+              )}
+            </div>
           ) : (
             <div className="text-center py-16">
               <p className="text-amber-600 font-bold">📄 Trang này chưa có nội dung text</p>

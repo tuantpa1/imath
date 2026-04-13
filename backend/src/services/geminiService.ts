@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { GeneratedQuestion, GenerateResult, SkipResult, ValidMime } from './claudeService';
 import { mergeRelatedQuestionsExport } from './claudeService';
+import { cleanBookText } from '../utils/textUtils';
 
 // Re-created on every call so PM2 env vars are always read fresh
 function getModel() {
@@ -150,18 +151,23 @@ Multiple choice (for sorting/ordering, true/false, name answers, or any question
 // ── iRead: OCR ───────────────────────────────────────────────────────────────
 
 export async function extractTextFromImage(imageBase64: string, mimeType: string): Promise<string> {
-  const prompt = `You are an OCR assistant. Extract ALL text from this book page image accurately.
-- Preserve paragraph breaks with double newlines
-- Preserve the original Vietnamese/English text exactly as written
-- Return text with properly composed Vietnamese diacritics (NFC Unicode form)
-- Do not add any commentary or explanation
-- Return only the extracted text, nothing else`;
+  const prompt = `You are an OCR assistant for a children's book reading app.
+Extract the MAIN STORY TEXT from this book page image.
+
+Rules:
+- Join lines that are part of the same sentence into one continuous line
+- Separate paragraphs with a blank line
+- EXCLUDE page numbers, series titles, publisher info, hotlines, ISBNs, prices, website URLs
+- EXCLUDE decorative text boxes with moral lessons (e.g. "Lời mẹ nhắn gửi" boxes)
+- EXCLUDE headers and footers (page numbers, book series name at top/bottom)
+- Preserve Vietnamese diacritics in NFC Unicode form
+- Return ONLY the story text, nothing else`;
 
   const result = await getModel().generateContent([
     prompt,
     { inlineData: { data: imageBase64, mimeType } },
   ]);
-  return result.response.text().trim().normalize('NFC');
+  return cleanBookText(result.response.text().trim().normalize('NFC'));
 }
 
 // ── iRead: Question generation ────────────────────────────────────────────────

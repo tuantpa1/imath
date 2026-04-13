@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { SCHEMA_SQL } from './schema';
+import { cleanBookText } from '../utils/textUtils';
 
 const DATA_DIR = path.resolve(__dirname, '../../../data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -47,23 +48,21 @@ export function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
 }
 
-// One-time fix: normalize existing extracted_text to NFC
+// Migration: normalize + clean existing extracted_text (NFC + line-join + footer removal)
 try {
   const pages = db.prepare(
     'SELECT id, extracted_text FROM story_pages WHERE extracted_text IS NOT NULL'
   ).all() as { id: number; extracted_text: string }[];
   const updateStmt = db.prepare('UPDATE story_pages SET extracted_text = ? WHERE id = ?');
-  let fixed = 0;
+  let count = 0;
   for (const page of pages) {
-    const normalized = page.extracted_text.normalize('NFC');
-    if (normalized !== page.extracted_text) {
-      updateStmt.run(normalized, page.id);
-      fixed++;
-    }
+    const cleaned = cleanBookText(page.extracted_text.normalize('NFC'));
+    updateStmt.run(cleaned, page.id);
+    count++;
   }
-  if (fixed > 0) console.log(`[DB] NFC-normalized ${fixed} story page(s)`);
+  if (count > 0) console.log(`[DB] Cleaned ${count} story page(s)`);
 } catch (e) {
-  console.log('[DB] NFC migration skipped:', e);
+  console.log('[DB] Text-clean migration skipped:', e);
 }
 
 // Migration: rebuild users table if CHECK constraint doesn't include 'admin'
