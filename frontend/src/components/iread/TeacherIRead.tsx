@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../../services/apiService';
 import { ireadService } from '../../services/ireadService';
-import type { Story, ReadingQuestion } from '../../services/ireadService';
+import type { Story, StoryPage, ReadingQuestion } from '../../services/ireadService';
 
 interface Student {
   id: number;
@@ -9,8 +9,15 @@ interface Student {
   username: string;
 }
 
+interface UploadedImage {
+  file: File;
+  preview: string;
+  isDoublePage: boolean;
+}
+
 type SubTab = 'library' | 'add';
-type AddStep = 1 | 2 | 3 | 4;
+type AddStep = 1 | 2 | 3;
+type LibTab = 'content' | 'questions' | 'assign';
 
 const OPTS = ['a', 'b', 'c', 'd'] as const;
 
@@ -18,13 +25,76 @@ function optionKey(opt: typeof OPTS[number]): keyof ReadingQuestion {
   return `option_${opt}` as keyof ReadingQuestion;
 }
 
-// ── Library tab ───────────────────────────────────────────────────────────────
+function getBackendUrl(urlPath: string): string {
+  const { protocol, hostname, port } = window.location;
+  if (!port || port === '443' || port === '80') return `${protocol}//${hostname}${urlPath}`;
+  return `${protocol}//${hostname}:3001${urlPath}`;
+}
+
+// ── EbookPreview ──────────────────────────────────────────────────────────────
+
+function EbookPreview({ pages }: { pages: StoryPage[] }) {
+  const [cur, setCur] = useState(0);
+  const page = pages[cur];
+  if (!page) return <p className="text-gray-400 text-sm text-center py-4">Không có trang nào</p>;
+
+  return (
+    <div style={{ backgroundColor: '#FDF6E3', borderRadius: '16px', padding: '16px', border: '1px solid #d97706' }}>
+      <div className="flex items-center justify-between mb-3">
+        <button
+          disabled={cur === 0}
+          onClick={() => setCur((p) => p - 1)}
+          className="btn-scale px-3 py-1.5 bg-amber-100 hover:bg-amber-200 disabled:opacity-30 rounded-xl text-xs font-bold text-amber-800"
+        >
+          ← Trước
+        </button>
+        <span className="text-xs font-bold text-amber-700">Trang {cur + 1} / {pages.length}</span>
+        <button
+          disabled={cur === pages.length - 1}
+          onClick={() => setCur((p) => p + 1)}
+          className="btn-scale px-3 py-1.5 bg-amber-100 hover:bg-amber-200 disabled:opacity-30 rounded-xl text-xs font-bold text-amber-800"
+        >
+          Sau →
+        </button>
+      </div>
+      {page.extracted_text ? (
+        <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: '15px', lineHeight: '1.85', color: '#2C1810' }}>
+          {page.extracted_text.split('\n').map((para, idx) =>
+            para.trim() ? (
+              <p key={idx} style={{
+                marginBottom: '1em',
+                textIndent: (!para.startsWith('\u201c') && !para.startsWith('"') && !para.startsWith('–') && !para.startsWith('-')) ? '1.5em' : '0',
+              }}>{para}</p>
+            ) : (
+              <div key={idx} style={{ height: '0.5em' }} />
+            )
+          )}
+        </div>
+      ) : page.image_url ? (
+        <img
+          src={getBackendUrl(page.image_url)}
+          alt={`Trang ${cur + 1}`}
+          style={{ width: '100%', borderRadius: '8px' }}
+        />
+      ) : (
+        <p className="text-gray-400 text-sm text-center py-4">Không có nội dung</p>
+      )}
+    </div>
+  );
+}
+
+// ── LibraryTab ────────────────────────────────────────────────────────────────
 
 function LibraryTab() {
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [libTab, setLibTab] = useState<LibTab>('content');
   const [questionsMap, setQuestionsMap] = useState<Record<number, ReadingQuestion[]>>({});
+  const [students, setStudents] = useState<Student[]>([]);
+  const [studentsLoaded, setStudentsLoaded] = useState(false);
+  const [assignSelectedIds, setAssignSelectedIds] = useState<Set<number>>(new Set());
+  const [assigning, setAssigning] = useState(false);
 
   useEffect(() => {
     ireadService.getMyStories()
@@ -36,10 +106,50 @@ function LibraryTab() {
   async function toggleExpand(storyId: number) {
     if (expandedId === storyId) { setExpandedId(null); return; }
     setExpandedId(storyId);
+    setLibTab('content');
+    setAssignSelectedIds(new Set());
     if (!questionsMap[storyId]) {
       const qs = await ireadService.getQuestions(storyId).catch(() => []);
       setQuestionsMap((prev) => ({ ...prev, [storyId]: qs }));
     }
+    if (!studentsLoaded) {
+      api.get<{ students: Student[] }>('/api/teacher/students')
+        .then((d) => { setStudents(d.students); setStudentsLoaded(true); })
+        .catch(() => {});
+    }
+  }
+
+  async function handleDeleteQuestion(storyId: number, questionId: number) {
+    await ireadService.deleteQuestion(questionId).catch(() => {});
+    setQuestionsMap((prev) => ({
+      ...prev,
+      [storyId]: (prev[storyId] ?? []).filter((q) => q.id !== questionId),
+    }));
+  }
+
+  function toggleAssignStudent(id: number) {
+    setAssignSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleAssign(storyId: number) {
+    if (assignSelectedIds.size === 0 || assigning) return;
+    setAssigning(true);
+    try {
+      await ireadService.assignStory(storyId, Array.from(assignSelectedIds));
+      setStories((prev) => prev.map((s) => {
+        if (s.id !== storyId) return s;
+        const merged = new Set([...(s.assignedStudentIds ?? []), ...assignSelectedIds]);
+        return { ...s, assignedStudentIds: Array.from(merged), assigned_count: merged.size };
+      }));
+      setAssignSelectedIds(new Set());
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Lỗi giao sách');
+    }
+    setAssigning(false);
   }
 
   if (loading) {
@@ -82,37 +192,114 @@ function LibraryTab() {
           </div>
 
           {expandedId === s.id && (
-            <div className="border-t border-emerald-100 px-4 pb-4 pt-3">
-              {!questionsMap[s.id] ? (
-                <div className="text-center py-4"><span className="animate-spin text-2xl inline-block">⭐</span></div>
-              ) : questionsMap[s.id].length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-3">Chưa có câu hỏi nào</p>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {questionsMap[s.id].map((q, qi) => (
-                    <div key={q.id} className="bg-emerald-50 rounded-2xl p-3 border border-emerald-100">
-                      <p className="font-bold text-gray-800 text-sm mb-2">{qi + 1}. {q.question_text}</p>
-                      {OPTS.map((opt) => (
-                        <div
-                          key={opt}
-                          className={`flex items-start gap-2 text-xs py-1.5 px-2.5 rounded-xl mb-1 border ${
-                            q.correct_option === opt
-                              ? 'bg-emerald-100 border-emerald-400 font-extrabold text-emerald-700'
-                              : 'bg-white border-gray-100 text-gray-600'
-                          }`}
-                        >
-                          <span className="font-extrabold shrink-0">{opt.toUpperCase()}.</span>
-                          <span className="flex-1">{q[optionKey(opt)] as string}</span>
-                          {q.correct_option === opt && <span className="shrink-0">✅</span>}
+            <div className="border-t border-emerald-100">
+              {/* Tab bar */}
+              <div className="flex border-b border-emerald-100">
+                {(['content', 'questions', 'assign'] as LibTab[]).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setLibTab(t)}
+                    className={`flex-1 py-2.5 text-xs font-bold transition-all border-b-2 -mb-px ${
+                      libTab === t
+                        ? 'text-emerald-700 border-emerald-500 bg-emerald-50'
+                        : 'text-gray-400 border-transparent hover:text-gray-600'
+                    }`}
+                  >
+                    {t === 'content' ? '📖 Nội dung' : t === 'questions' ? '❓ Câu hỏi' : '📤 Giao'}
+                  </button>
+                ))}
+              </div>
+
+              <div className="px-4 pb-4 pt-3">
+                {/* Content tab */}
+                {libTab === 'content' && (
+                  s.pages && s.pages.length > 0
+                    ? <EbookPreview pages={s.pages} />
+                    : <p className="text-gray-400 text-sm text-center py-4">Chưa có trang sách nào</p>
+                )}
+
+                {/* Questions tab */}
+                {libTab === 'questions' && (
+                  !questionsMap[s.id] ? (
+                    <div className="text-center py-4"><span className="animate-spin text-2xl inline-block">⭐</span></div>
+                  ) : questionsMap[s.id].length === 0 ? (
+                    <p className="text-gray-400 text-sm text-center py-3">Chưa có câu hỏi nào</p>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {questionsMap[s.id].map((q, qi) => (
+                        <div key={q.id} className="bg-emerald-50 rounded-2xl p-3 border border-emerald-100">
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <p className="font-bold text-gray-800 text-sm flex-1">{qi + 1}. {q.question_text}</p>
+                            <button
+                              onClick={() => { void handleDeleteQuestion(s.id, q.id); }}
+                              className="btn-scale text-rose-400 hover:text-rose-600 text-base shrink-0 leading-none"
+                              title="Xóa câu hỏi"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                          {OPTS.map((opt) => (
+                            <div key={opt} className={`flex items-start gap-2 text-xs py-1.5 px-2.5 rounded-xl mb-1 border ${
+                              q.correct_option === opt
+                                ? 'bg-emerald-100 border-emerald-400 font-extrabold text-emerald-700'
+                                : 'bg-white border-gray-100 text-gray-600'
+                            }`}>
+                              <span className="font-extrabold shrink-0">{opt.toUpperCase()}.</span>
+                              <span className="flex-1">{q[optionKey(opt)] as string}</span>
+                              {q.correct_option === opt && <span className="shrink-0">✅</span>}
+                            </div>
+                          ))}
+                          {q.explanation && (
+                            <p className="text-xs text-emerald-600 italic mt-1.5 pl-1">💡 {q.explanation}</p>
+                          )}
                         </div>
                       ))}
-                      {q.explanation && (
-                        <p className="text-xs text-emerald-600 italic mt-1.5 pl-1">💡 {q.explanation}</p>
-                      )}
                     </div>
-                  ))}
-                </div>
-              )}
+                  )
+                )}
+
+                {/* Assign tab */}
+                {libTab === 'assign' && (
+                  !studentsLoaded ? (
+                    <div className="text-center py-3"><span className="animate-spin text-xl inline-block">⭐</span></div>
+                  ) : students.length === 0 ? (
+                    <p className="text-gray-400 text-sm text-center py-2">Lớp chưa có học sinh nào</p>
+                  ) : (
+                    <>
+                      <div className="flex flex-col gap-0.5 mb-3">
+                        {students.map((st) => {
+                          const alreadyAssigned = (s.assignedStudentIds ?? []).includes(st.id);
+                          return (
+                            <label key={st.id} className="flex items-center gap-3 cursor-pointer p-2.5 rounded-2xl hover:bg-emerald-50 transition-all">
+                              <input
+                                type="checkbox"
+                                checked={assignSelectedIds.has(st.id)}
+                                onChange={() => toggleAssignStudent(st.id)}
+                                className="w-5 h-5 accent-emerald-500 shrink-0"
+                              />
+                              <span className="font-bold text-gray-800 text-sm flex-1">{st.display_name}</span>
+                              {alreadyAssigned && (
+                                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shrink-0">✓ Đã giao</span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <button
+                        onClick={() => { void handleAssign(s.id); }}
+                        disabled={assignSelectedIds.size === 0 || assigning}
+                        className="btn-scale w-full py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-bold text-sm transition-all"
+                      >
+                        {assigning
+                          ? '⏳ Đang giao...'
+                          : assignSelectedIds.size === 0
+                          ? '📤 Chọn học sinh để giao'
+                          : `📤 Giao cho ${assignSelectedIds.size} học sinh`}
+                      </button>
+                    </>
+                  )
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -121,71 +308,76 @@ function LibraryTab() {
   );
 }
 
-// ── Add book wizard ───────────────────────────────────────────────────────────
+// ── AddBookWizard ─────────────────────────────────────────────────────────────
 
 function AddBookWizard({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<AddStep>(1);
 
-  // Step 1
+  // Step 1 — local state only
   const [title, setTitle] = useState('');
   const [language, setLanguage] = useState<'vi' | 'en'>('vi');
   const [level, setLevel] = useState('elementary');
 
-  // Step 2
-  const [createdStoryId, setCreatedStoryId] = useState<number | null>(null);
-  const [pages, setPages] = useState<File[]>([]);
+  // Step 2 — local state only
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
   const [processing, setProcessing] = useState(false);
-  const [processMsg, setProcessMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
 
-  // Step 3
+  // Step 3 — preview after atomic API call
+  const [createdStory, setCreatedStory] = useState<Story | null>(null);
+  const [createdPages, setCreatedPages] = useState<StoryPage[]>([]);
   const [questions, setQuestions] = useState<ReadingQuestion[]>([]);
+  const [showEbook, setShowEbook] = useState(false);
+  const [showAssign, setShowAssign] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  // Step 4
+  // Assign sub-state
   const [students, setStudents] = useState<Student[]>([]);
+  const [studentsLoaded, setStudentsLoaded] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [assigning, setAssigning] = useState(false);
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    if (step === 4 && students.length === 0) {
+    if (showAssign && !studentsLoaded) {
       api.get<{ students: Student[] }>('/api/teacher/students')
-        .then((d) => setStudents(d.students))
+        .then((d) => { setStudents(d.students); setStudentsLoaded(true); })
         .catch(() => {});
     }
-  }, [step, students.length]);
+  }, [showAssign, studentsLoaded]);
 
-  // ── Step 1 ──
-
-  async function handleStep1() {
-    if (!title.trim()) return;
-    try {
-      const story = await ireadService.createStory({ title: title.trim(), language, level });
-      setCreatedStoryId(story.id);
-      setStep(2);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Lỗi tạo truyện');
-    }
-  }
-
-  // ── Step 2 ──
+  // ── File handling ──
 
   function addFiles(files: FileList | null) {
     if (!files) return;
-    setPages((prev) => [...prev, ...Array.from(files)]);
+    const newImages: UploadedImage[] = Array.from(files).map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      isDoublePage: false,
+    }));
+    setUploadedImages((prev) => [...prev, ...newImages]);
   }
 
   function removePage(idx: number) {
-    setPages((prev) => prev.filter((_, i) => i !== idx));
+    setUploadedImages((prev) => {
+      URL.revokeObjectURL(prev[idx].preview);
+      return prev.filter((_, i) => i !== idx);
+    });
+  }
+
+  function toggleDoublePage(idx: number) {
+    setUploadedImages((prev) =>
+      prev.map((img, i) => i === idx ? { ...img, isDoublePage: !img.isDoublePage } : img)
+    );
   }
 
   function handleDragStart(idx: number) { dragItem.current = idx; }
   function handleDragEnter(idx: number) { dragOverItem.current = idx; }
   function handleDragEnd() {
     if (dragItem.current === null || dragOverItem.current === null || dragItem.current === dragOverItem.current) return;
-    setPages((prev) => {
+    setUploadedImages((prev) => {
       const copy = [...prev];
       const [dragged] = copy.splice(dragItem.current!, 1);
       copy.splice(dragOverItem.current!, 0, dragged);
@@ -195,32 +387,59 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
     dragOverItem.current = null;
   }
 
-  async function handleProcessPages() {
-    if (!createdStoryId || pages.length === 0) return;
+  // ── Process (single atomic API call) ──
+
+  async function handleProcess() {
+    if (uploadedImages.length === 0 || processing) return;
     setProcessing(true);
     try {
-      for (let i = 0; i < pages.length; i++) {
-        setProcessMsg(`Đang đọc trang ${i + 1}/${pages.length}...`);
-        await ireadService.uploadPage(createdStoryId, pages[i], i + 1);
-      }
-      setProcessMsg('Đang tạo câu hỏi...');
-      const qs = await ireadService.generateQuestions(createdStoryId);
-      setQuestions(qs);
+      const result = await ireadService.createStoryWithPages(
+        { title: title.trim(), language, level },
+        uploadedImages
+      );
+      setCreatedStory(result.story);
+      setCreatedPages(result.pages);
+      setQuestions(result.questions);
       setStep(3);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Lỗi xử lý trang sách');
+      alert(err instanceof Error ? err.message : 'Lỗi tạo sách. Vui lòng thử lại.');
     }
     setProcessing(false);
   }
 
-  // ── Step 3 ──
+  // ── Delete story ──
 
-  async function handleDeleteQuestion(id: number) {
-    await ireadService.deleteQuestion(id).catch(() => {});
+  async function handleDeleteStory() {
+    if (!createdStory) return;
+    if (!window.confirm(`Xóa sách "${createdStory.title}"? Hành động này không thể hoàn tác.`)) return;
+    setDeleting(true);
+    try {
+      await ireadService.deleteStory(createdStory.id);
+      setStep(1);
+      setTitle('');
+      setLanguage('vi');
+      setLevel('elementary');
+      uploadedImages.forEach((img) => URL.revokeObjectURL(img.preview));
+      setUploadedImages([]);
+      setCreatedStory(null);
+      setCreatedPages([]);
+      setQuestions([]);
+      setShowEbook(false);
+      setShowAssign(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Lỗi xóa sách');
+    }
+    setDeleting(false);
+  }
+
+  // ── Delete question ──
+
+  function handleDeleteQuestion(id: number) {
+    void ireadService.deleteQuestion(id).catch(() => {});
     setQuestions((prev) => prev.filter((q) => q.id !== id));
   }
 
-  // ── Step 4 ──
+  // ── Assign ──
 
   function toggleStudent(id: number) {
     setSelectedIds((prev) => {
@@ -231,10 +450,10 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
   }
 
   async function handleAssign() {
-    if (!createdStoryId || selectedIds.size === 0) return;
+    if (!createdStory || selectedIds.size === 0) return;
     setAssigning(true);
     try {
-      await ireadService.assignStory(createdStoryId, Array.from(selectedIds));
+      await ireadService.assignStory(createdStory.id, Array.from(selectedIds));
       setDone(true);
       setTimeout(onDone, 2000);
     } catch (err) {
@@ -243,9 +462,9 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
     setAssigning(false);
   }
 
-  // ── Progress bar ──
+  // ── Step indicator ──
 
-  const stepLabels = ['Thông tin', 'Upload', 'Câu hỏi', 'Giao bài'];
+  const stepLabels = ['Thông tin', 'Upload', 'Xem & Giao'];
 
   return (
     <div className="flex flex-col gap-4">
@@ -254,15 +473,15 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
         {stepLabels.map((label, i) => {
           const s = i + 1;
           const active = s === step;
-          const done_ = s < step;
+          const past = s < step;
           return (
             <div key={s} className="flex-1 flex flex-col items-center gap-1">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-extrabold border-2 transition-all ${
-                done_ ? 'bg-emerald-400 border-emerald-400 text-white'
+                past ? 'bg-emerald-400 border-emerald-400 text-white'
                 : active ? 'bg-white border-white text-emerald-700'
                 : 'bg-transparent border-white/30 text-white/40'
               }`}>
-                {done_ ? '✓' : s}
+                {past ? '✓' : s}
               </div>
               <span className={`text-xs font-bold ${active ? 'text-white' : 'text-white/40'}`}>{label}</span>
             </div>
@@ -270,7 +489,7 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
         })}
       </div>
 
-      {/* ── Step 1: Book info ── */}
+      {/* ── Step 1: Book info (no API call) ── */}
       {step === 1 && (
         <div className="bg-white rounded-3xl shadow-xl p-5 border border-emerald-100">
           <h3 className="font-extrabold text-emerald-700 text-base mb-4">📋 Thông tin sách</h3>
@@ -285,7 +504,6 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
                 className="input-glow w-full text-base font-bold border-2 border-emerald-200 rounded-2xl py-3 px-4 focus:border-emerald-500 transition-all"
               />
             </div>
-
             <div>
               <label className="text-sm font-bold text-gray-600 mb-2 block">Ngôn ngữ</label>
               <div className="flex gap-3">
@@ -304,7 +522,6 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
                 ))}
               </div>
             </div>
-
             <div>
               <label className="text-sm font-bold text-gray-600 mb-1.5 block">Cấp độ</label>
               <select
@@ -316,9 +533,8 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
                 <option value="middle">Cấp 2 (lớp 6–9)</option>
               </select>
             </div>
-
             <button
-              onClick={() => { void handleStep1(); }}
+              onClick={() => { if (title.trim()) setStep(2); }}
               disabled={!title.trim()}
               className="btn-scale w-full py-3.5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-extrabold text-base shadow-lg transition-all"
             >
@@ -328,13 +544,12 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      {/* ── Step 2: Upload pages ── */}
+      {/* ── Step 2: Upload images, then process ── */}
       {step === 2 && (
         <div className="flex flex-col gap-3">
           <div className="bg-white rounded-3xl shadow-xl p-5 border border-emerald-100">
             <h3 className="font-extrabold text-emerald-700 text-base mb-1">📷 Upload trang sách</h3>
             <p className="text-xs text-gray-400 mb-4">Kéo thả để sắp xếp lại thứ tự trang</p>
-
             <div
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-emerald-300 rounded-2xl p-6 text-center cursor-pointer hover:border-emerald-500 hover:bg-emerald-50 transition-all"
@@ -344,7 +559,10 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
               <p className="text-xs text-gray-400 mt-1">Chọn nhiều ảnh cùng lúc (JPG, PNG, WebP)</p>
             </div>
             <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-              💡 <span className="font-semibold">Mẹo:</span> Nên chụp từng trang riêng lẻ để OCR chính xác hơn. Nếu chụp 2 trang (sách mở), chỉ trang bên <span className="font-semibold">TRÁI</span> sẽ được nhận.
+              💡 <span className="font-semibold">Mẹo chụp ảnh để OCR chính xác nhất:</span><br/>
+              • Tốt nhất: chụp từng trang riêng lẻ<br/>
+              • Nếu chụp sách mở: đảm bảo trang cần lấy nằm ở bên <span className="font-semibold">TRÁI</span><br/>
+              • Giữ máy thẳng, đủ sáng, tránh bóng tay che text
             </p>
             <input
               ref={fileInputRef}
@@ -356,9 +574,9 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
             />
           </div>
 
-          {pages.length > 0 && (
+          {uploadedImages.length > 0 && (
             <div className="flex flex-col gap-2">
-              {pages.map((file, idx) => (
+              {uploadedImages.map((img, idx) => (
                 <div
                   key={idx}
                   draggable
@@ -366,24 +584,40 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
                   onDragEnter={() => handleDragEnter(idx)}
                   onDragEnd={handleDragEnd}
                   onDragOver={(e) => e.preventDefault()}
-                  className="bg-white rounded-2xl shadow border border-emerald-100 p-3 flex items-center gap-3 cursor-grab active:cursor-grabbing select-none"
+                  className={`bg-white rounded-2xl shadow border p-3 cursor-grab active:cursor-grabbing select-none ${
+                    img.isDoublePage ? 'border-violet-200 bg-violet-50/30' : 'border-emerald-100'
+                  }`}
                 >
-                  <span className="text-gray-300 text-lg shrink-0">⠿</span>
-                  <img
-                    src={URL.createObjectURL(file)}
-                    alt={`Trang ${idx + 1}`}
-                    className="w-12 h-14 object-cover rounded-xl border border-gray-100 shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-800 text-sm">Trang {idx + 1}</p>
-                    <p className="text-xs text-gray-400 truncate">{file.name}</p>
+                  <div className="flex items-center gap-3">
+                    <span className="text-gray-300 text-lg shrink-0">⠿</span>
+                    <img
+                      src={img.preview}
+                      alt={`Ảnh ${idx + 1}`}
+                      className="w-12 h-14 object-cover rounded-xl border border-gray-100 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-800 text-sm">Ảnh {idx + 1}</p>
+                      <p className="text-xs text-gray-400 truncate">{img.file.name}</p>
+                      {img.isDoublePage && (
+                        <p className="text-xs text-violet-500 font-semibold mt-0.5">→ Tách thành trang trái + phải</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => removePage(idx)}
+                      className="btn-scale text-rose-400 hover:text-rose-600 shrink-0 text-lg leading-none"
+                    >
+                      ✕
+                    </button>
                   </div>
-                  <button
-                    onClick={() => removePage(idx)}
-                    className="btn-scale text-rose-400 hover:text-rose-600 shrink-0 text-lg leading-none"
-                  >
-                    ✕
-                  </button>
+                  <label className="flex items-center gap-2 mt-2.5 cursor-pointer select-none pl-8">
+                    <input
+                      type="checkbox"
+                      checked={img.isDoublePage}
+                      onChange={() => toggleDoublePage(idx)}
+                      className="w-4 h-4 accent-violet-500 shrink-0"
+                    />
+                    <span className="text-xs font-bold text-violet-600">📖 Ảnh 2 trang (sách mở)</span>
+                  </label>
                 </div>
               ))}
             </div>
@@ -392,13 +626,16 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
           {processing && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
               <span className="text-2xl animate-spin inline-block mb-2">⭐</span>
-              <p className="font-bold text-emerald-700 text-sm">{processMsg}</p>
+              <p className="font-bold text-emerald-700 text-sm">
+                Đang OCR {uploadedImages.reduce((s, img) => s + (img.isDoublePage ? 2 : 1), 0)} trang và tạo câu hỏi...
+              </p>
+              <p className="text-xs text-emerald-500 mt-1">Có thể mất 30–60 giây, vui lòng đợi</p>
             </div>
           )}
 
           <button
-            onClick={() => { void handleProcessPages(); }}
-            disabled={pages.length === 0 || processing}
+            onClick={() => { void handleProcess(); }}
+            disabled={uploadedImages.length === 0 || processing}
             className="btn-scale w-full py-3.5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-extrabold text-base shadow-lg transition-all"
           >
             {processing ? '⏳ Đang xử lý...' : '🤖 Xử lý OCR & Tạo câu hỏi'}
@@ -406,65 +643,8 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      {/* ── Step 3: Preview questions ── */}
-      {step === 3 && (
-        <div className="flex flex-col gap-3">
-          <div className="bg-white rounded-3xl shadow-xl p-5 border border-emerald-100">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-extrabold text-emerald-700 text-base">✅ Câu hỏi được tạo</h3>
-              <span className="text-sm font-bold text-gray-400">{questions.length} câu</span>
-            </div>
-
-            {questions.length === 0 ? (
-              <p className="text-gray-400 text-center py-6">Không có câu hỏi nào được tạo</p>
-            ) : (
-              <div className="flex flex-col gap-4">
-                {questions.map((q, qi) => (
-                  <div key={q.id} className="border border-emerald-100 rounded-2xl p-4">
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <p className="font-bold text-gray-800 text-sm flex-1">{qi + 1}. {q.question_text}</p>
-                      <button
-                        onClick={() => { void handleDeleteQuestion(q.id); }}
-                        className="btn-scale text-rose-400 hover:text-rose-600 text-lg shrink-0 leading-none"
-                        title="Xóa câu hỏi"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                    {OPTS.map((opt) => (
-                      <div
-                        key={opt}
-                        className={`flex items-start gap-2 text-xs py-2 px-3 rounded-xl mb-1.5 border ${
-                          q.correct_option === opt
-                            ? 'bg-emerald-100 border-emerald-400 font-extrabold text-emerald-700'
-                            : 'bg-gray-50 border-gray-100 text-gray-600'
-                        }`}
-                      >
-                        <span className="font-extrabold shrink-0 w-4">{opt.toUpperCase()}.</span>
-                        <span className="flex-1">{q[optionKey(opt)] as string}</span>
-                        {q.correct_option === opt && <span className="shrink-0">✅</span>}
-                      </div>
-                    ))}
-                    {q.explanation && (
-                      <p className="text-xs text-emerald-600 italic mt-2 pl-1">💡 {q.explanation}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <button
-            onClick={() => setStep(4)}
-            className="btn-scale w-full py-3.5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-base shadow-lg transition-all"
-          >
-            Giao cho học sinh →
-          </button>
-        </div>
-      )}
-
-      {/* ── Step 4: Assign ── */}
-      {step === 4 && (
+      {/* ── Step 3: Preview + Assign ── */}
+      {step === 3 && createdStory && (
         <div className="flex flex-col gap-3">
           {done ? (
             <div className="bg-white rounded-3xl shadow-xl p-8 text-center border border-emerald-100">
@@ -472,11 +652,18 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
               <p className="font-extrabold text-emerald-600 text-lg">Giao sách thành công!</p>
               <p className="text-sm text-gray-500 mt-1">Đang chuyển về thư viện...</p>
             </div>
-          ) : (
+          ) : showAssign ? (
+            /* Assign panel */
             <div className="bg-white rounded-3xl shadow-xl p-5 border border-emerald-100">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-extrabold text-emerald-700 text-base">👦 Chọn học sinh</h3>
-                <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mb-4">
+                <button
+                  onClick={() => setShowAssign(false)}
+                  className="btn-scale text-gray-400 hover:text-gray-600 font-bold text-sm"
+                >
+                  ←
+                </button>
+                <h3 className="font-extrabold text-emerald-700 text-base flex-1">👦 Chọn học sinh</h3>
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSelectedIds(new Set(students.map((s) => s.id)))}
                     className="text-xs font-bold text-emerald-600 hover:text-emerald-800"
@@ -493,15 +680,14 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
                 </div>
               </div>
 
-              {students.length === 0 ? (
+              {!studentsLoaded ? (
+                <div className="text-center py-6"><span className="animate-spin text-2xl inline-block">⭐</span></div>
+              ) : students.length === 0 ? (
                 <p className="text-gray-400 text-sm text-center py-6">Lớp chưa có học sinh nào</p>
               ) : (
                 <div className="flex flex-col gap-1 mb-5">
                   {students.map((s) => (
-                    <label
-                      key={s.id}
-                      className="flex items-center gap-3 cursor-pointer p-3 rounded-2xl hover:bg-emerald-50 transition-all"
-                    >
+                    <label key={s.id} className="flex items-center gap-3 cursor-pointer p-3 rounded-2xl hover:bg-emerald-50 transition-all">
                       <input
                         type="checkbox"
                         checked={selectedIds.has(s.id)}
@@ -520,11 +706,90 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
                 disabled={selectedIds.size === 0 || assigning}
                 className="btn-scale w-full py-3.5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-extrabold text-base shadow-lg transition-all"
               >
-                {assigning
-                  ? '⏳ Đang giao...'
-                  : `✅ Giao sách cho ${selectedIds.size} học sinh`}
+                {assigning ? '⏳ Đang giao...' : `✅ Giao sách cho ${selectedIds.size} học sinh`}
               </button>
             </div>
+          ) : (
+            /* Preview panel */
+            <>
+              <div className="bg-white rounded-3xl shadow-xl p-5 border border-emerald-100">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-emerald-500 text-xl">✅</span>
+                  <h3 className="font-extrabold text-gray-800 text-base">Tạo sách thành công!</h3>
+                </div>
+                <p className="text-emerald-700 font-bold text-sm mb-4">"{createdStory.title}"</p>
+
+                {/* Ebook preview toggle */}
+                <button
+                  onClick={() => setShowEbook((v) => !v)}
+                  className="btn-scale w-full py-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-700 font-bold text-sm mb-4 transition-all"
+                >
+                  {showEbook ? '▲ Ẩn nội dung sách' : '📖 Xem nội dung sách'}
+                </button>
+                {showEbook && createdPages.length > 0 && (
+                  <div className="mb-4">
+                    <EbookPreview pages={createdPages} />
+                  </div>
+                )}
+
+                {/* Questions */}
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-bold text-gray-700 text-sm">❓ Câu hỏi đọc hiểu</p>
+                  <span className="text-xs text-gray-400">{questions.length} câu</span>
+                </div>
+                {questions.length === 0 ? (
+                  <p className="text-gray-400 text-sm text-center py-3">Không tạo được câu hỏi nào</p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {questions.map((q, qi) => (
+                      <div key={q.id} className="border border-emerald-100 rounded-2xl p-3">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <p className="font-bold text-gray-800 text-sm flex-1">{qi + 1}. {q.question_text}</p>
+                          <button
+                            onClick={() => handleDeleteQuestion(q.id)}
+                            className="btn-scale text-rose-400 hover:text-rose-600 text-base shrink-0 leading-none"
+                            title="Xóa câu hỏi"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                        {OPTS.map((opt) => (
+                          <div key={opt} className={`flex items-start gap-2 text-xs py-1.5 px-2.5 rounded-xl mb-1 border ${
+                            q.correct_option === opt
+                              ? 'bg-emerald-100 border-emerald-400 font-extrabold text-emerald-700'
+                              : 'bg-gray-50 border-gray-100 text-gray-600'
+                          }`}>
+                            <span className="font-extrabold shrink-0">{opt.toUpperCase()}.</span>
+                            <span className="flex-1">{q[optionKey(opt)] as string}</span>
+                            {q.correct_option === opt && <span className="shrink-0">✅</span>}
+                          </div>
+                        ))}
+                        {q.explanation && (
+                          <p className="text-xs text-emerald-600 italic mt-1.5 pl-1">💡 {q.explanation}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { void handleDeleteStory(); }}
+                  disabled={deleting}
+                  className="btn-scale flex-1 py-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 font-bold text-sm disabled:opacity-50 transition-all"
+                >
+                  {deleting ? '⏳ Đang xóa...' : '🗑️ Xóa sách này'}
+                </button>
+                <button
+                  onClick={() => setShowAssign(true)}
+                  className="btn-scale flex-1 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-sm shadow-lg transition-all"
+                >
+                  📤 Giao →
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
@@ -536,7 +801,7 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
 
 export default function TeacherIRead() {
   const [subTab, setSubTab] = useState<SubTab>('library');
-  const [libKey, setLibKey] = useState(0); // force LibraryTab remount on return from wizard
+  const [libKey, setLibKey] = useState(0);
 
   function handleWizardDone() {
     setLibKey((k) => k + 1);
@@ -545,7 +810,6 @@ export default function TeacherIRead() {
 
   return (
     <div>
-      {/* Sub-tab bar */}
       <div className="flex gap-2 mb-5">
         {(['library', 'add'] as SubTab[]).map((t) => (
           <button

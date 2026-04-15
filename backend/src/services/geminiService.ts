@@ -150,14 +150,57 @@ Multiple choice (for sorting/ordering, true/false, name answers, or any question
 
 // ── iRead: OCR ───────────────────────────────────────────────────────────────
 
+function isGeminiReasoning(text: string): boolean {
+  const reasoningPhrases = [
+    'the image shows',
+    'according to the',
+    'critical instruction',
+    'i must extract',
+    'i need to',
+    'let me analyze',
+    'looking at the image',
+    'i can see',
+    'i will extract',
+    'based on the instruction',
+    'the left page',
+    'the right page',
+    'no extractable text',
+    'therefore, no',
+  ];
+  const lower = text.toLowerCase();
+  return reasoningPhrases.some((phrase) => lower.includes(phrase));
+}
+
+async function extractTextFromImageSimple(imageBase64: string, mimeType: string): Promise<string> {
+  const simplePrompt = `Extract all readable story text from this book page image.
+Return ONLY the story text. Do not explain, do not comment, do not describe what you see.
+If you cannot extract text, return exactly: [NO_TEXT]`;
+
+  const result = await getModel().generateContent([
+    { inlineData: { data: imageBase64, mimeType } },
+    simplePrompt,
+  ]);
+
+  const text = result.response.text().trim();
+  if (text === '[NO_TEXT]' || isGeminiReasoning(text)) return '';
+  return cleanBookText(text.normalize('NFC'));
+}
+
 export async function extractTextFromImage(imageBase64: string, mimeType: string): Promise<string> {
-  const prompt = `You are an OCR assistant for a children's book reading app.
+  const prompt = `IMPORTANT: Your response must contain ONLY the extracted story text.
+Do NOT include any explanation, reasoning, commentary, or description of what you see.
+Do NOT mention "the image", "the page", "according to instructions", or any meta-commentary.
+If there is no readable story text, respond with exactly: [NO_TEXT]
+
+You are an OCR assistant for a children's book reading app.
 This image may show ONE page or TWO pages of an open book.
 
-CRITICAL INSTRUCTION:
-- If the image shows TWO pages side by side (open book spread), extract ONLY the LEFT page text
-- The left page is the page on the LEFT side of the book spine/center fold
-- Completely IGNORE all text on the right page
+CRITICAL INSTRUCTION for double-page spreads:
+- If the image shows TWO pages side by side (open book):
+  * If the LEFT page has substantial readable text (more than 3 complete sentences): extract LEFT page only
+  * If the LEFT page has only fragments/cut-off text at the edge (less than 3 complete sentences): extract RIGHT page instead
+  * Never extract from BOTH pages simultaneously
+- If the image shows ONE page only: extract that page
 
 For the extracted page, follow these rules:
 - Join words/syllables that belong to the same sentence into continuous paragraphs
@@ -170,6 +213,11 @@ For the extracted page, follow these rules:
   * The moral lesson text that appears in a separate box at the end of stories
   * Any text that appears in a visually distinct box/frame separate from the main story
   * Headers and footers at the very top or bottom of the page
+  * Text inside or overlaid on illustrations, drawings, or decorative images
+  * Speech bubbles or thought bubbles within illustrations
+  * Image captions (text directly under or beside an illustration describing it)
+  * Watermarks or decorative text elements
+- If an illustration interrupts the text flow on the page, extract the text from before AND after the illustration as one continuous paragraph — do not include any text that is part of the illustration itself
 - Preserve Vietnamese diacritics correctly (NFC Unicode)
 - Return ONLY the main story text, nothing else, no commentary`;
 
@@ -177,7 +225,60 @@ For the extracted page, follow these rules:
     prompt,
     { inlineData: { data: imageBase64, mimeType } },
   ]);
-  return cleanBookText(result.response.text().trim().normalize('NFC'));
+
+  const rawText = result.response.text().trim();
+
+  if (rawText === '[NO_TEXT]') return '';
+
+  if (isGeminiReasoning(rawText)) {
+    console.log('[iRead OCR] Gemini returned reasoning, retrying with simplified prompt...');
+    return await extractTextFromImageSimple(imageBase64, mimeType);
+  }
+
+  return cleanBookText(rawText.normalize('NFC'));
+}
+
+// ── iRead: OCR single side ────────────────────────────────────────────────────
+
+export async function extractTextFromImageSide(
+  imageBase64: string,
+  mimeType: string,
+  side: 'left' | 'right'
+): Promise<string> {
+  const sideInstruction =
+    side === 'left'
+      ? `This image shows TWO pages of an open book side by side.
+Extract text ONLY from the LEFT page (the left half of the image).
+Completely ignore all text on the right page.`
+      : `This image shows TWO pages of an open book side by side.
+Extract text ONLY from the RIGHT page (the right half of the image).
+Completely ignore all text on the left page.`;
+
+  const prompt = `IMPORTANT: Your response must contain ONLY the extracted story text.
+Do NOT include any explanation, reasoning, commentary, or description of what you see.
+Do NOT mention "the image", "the page", "according to instructions", or any meta-commentary.
+If there is no readable story text on that side, respond with exactly: [NO_TEXT]
+
+${sideInstruction}
+
+Additional rules:
+- Join lines that belong to the same sentence into continuous paragraphs
+- Separate paragraphs with a blank line
+- EXCLUDE: page numbers (standalone numbers), series/collection names, publisher info, hotlines, ISBNs, prices, website URLs
+- EXCLUDE: "Lời mẹ nhắn gửi" boxes, "Bài học" boxes, and moral lesson text at the end of stories
+- EXCLUDE: text inside or overlaid on illustrations, speech bubbles, image captions, watermarks
+- If an illustration interrupts the text flow, extract text from before AND after it as one continuous paragraph
+- Preserve Vietnamese diacritics correctly (NFC Unicode)
+- Return ONLY the story text`;
+
+  const result = await getModel().generateContent([
+    { inlineData: { data: imageBase64, mimeType } },
+    prompt,
+  ]);
+
+  const rawText = result.response.text().trim();
+  if (rawText === '[NO_TEXT]' || isGeminiReasoning(rawText)) return '';
+  return cleanBookText(rawText.normalize('NFC'));
 }
 
 // ── iRead: Question generation ────────────────────────────────────────────────

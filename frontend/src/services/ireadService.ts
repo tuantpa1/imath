@@ -12,6 +12,8 @@ export interface Story {
   total_pages: number;
   question_count?: number;
   assigned_count?: number;
+  assignedStudentIds?: number[];
+  pages?: StoryPage[];
 }
 
 export interface StoryPage {
@@ -62,6 +64,27 @@ export interface ReadingSession {
 export const ireadService = {
   createStory: (data: { title: string; language: string; level: string; cover_image_url?: string }) =>
     api.post<Story>('/api/iread/stories', data),
+
+  createStoryWithPages: (
+    data: { title: string; language: string; level: string },
+    images: Array<{ file: File; isDoublePage: boolean }>
+  ) => {
+    const form = new FormData();
+    form.append('title', data.title);
+    form.append('language', data.language);
+    form.append('level', data.level);
+    for (const img of images) {
+      form.append('images', img.file);
+      form.append('doublePageFlag', img.isDoublePage ? 'true' : 'false');
+    }
+    return api.post<{ story: Story; pages: StoryPage[]; questions: ReadingQuestion[] }>(
+      '/api/iread/stories/create-with-pages',
+      form
+    );
+  },
+
+  deleteStory: (storyId: number) =>
+    api.delete(`/api/iread/stories/${storyId}`),
 
   uploadPage: (storyId: number, imageFile: File, pageNumber: number) => {
     const form = new FormData();

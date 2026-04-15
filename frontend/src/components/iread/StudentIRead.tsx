@@ -306,13 +306,29 @@ export default function StudentIRead() {
               )}
             </div>
           ) : (
-            <div className="text-center py-16">
-              <p className="text-amber-600 font-bold">📄 Trang này chưa có nội dung text</p>
+            <div>
+              <div style={{
+                textAlign: 'center',
+                padding: '14px 16px',
+                color: '#92400e',
+                backgroundColor: '#fef3c7',
+                borderRadius: '12px',
+                marginBottom: '16px',
+                fontSize: '14px',
+                fontFamily: "'Baloo 2', sans-serif",
+                lineHeight: '1.6',
+              }}>
+                📷 Trang này chưa đọc được text tự động.
+                <br />
+                <span style={{ fontSize: '12px', color: '#78716c' }}>
+                  Bạn có thể xem hình ảnh bên dưới hoặc đọc sách giấy.
+                </span>
+              </div>
               {page?.image_url && (
                 <img
                   src={getBackendUrl(page.image_url)}
                   alt={`Trang ${readerPage}`}
-                  className="mx-auto mt-6 max-h-[70vh] object-contain rounded-xl shadow"
+                  style={{ width: '100%', borderRadius: '12px', boxShadow: '0 2px 12px rgba(0,0,0,0.10)' }}
                 />
               )}
             </div>

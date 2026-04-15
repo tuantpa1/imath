@@ -43,6 +43,11 @@ try {
 } catch {
   // Column already exists — ignore
 }
+try {
+  db.exec(`ALTER TABLE story_pages ADD COLUMN side TEXT DEFAULT 'single'`);
+} catch {
+  // Column already exists — ignore
+}
 
 export function hashPassword(password: string): string {
   return crypto.createHash('sha256').update(password).digest('hex');
