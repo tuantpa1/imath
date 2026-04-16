@@ -899,11 +899,12 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 interface TeacherViewProps {
-  onLogout: () => void;
+  onLogout?: () => void;
+  initialTab?: Tab;
 }
 
-export default function TeacherView({ onLogout }: TeacherViewProps) {
-  const [tab, setTab] = useState<Tab>('class');
+export default function TeacherView({ onLogout, initialTab }: TeacherViewProps) {
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'class');
   const user = authService.getCurrentUser();
 
   return (
@@ -920,12 +921,14 @@ export default function TeacherView({ onLogout }: TeacherViewProps) {
               <p className="text-violet-300 text-xs">Lớp học của tôi</p>
             </div>
           </div>
-          <button
-            onClick={onLogout}
-            className="btn-scale bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-1.5 rounded-xl text-xs border border-white/20"
-          >
-            Đăng xuất
-          </button>
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="btn-scale bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-1.5 rounded-xl text-xs border border-white/20"
+            >
+              Đăng xuất
+            </button>
+          )}
         </div>
 
         {/* Tab bar */}

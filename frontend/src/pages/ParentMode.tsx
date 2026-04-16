@@ -59,6 +59,7 @@ type UploadState = 'idle' | 'loading' | 'success' | 'error';
 
 interface ParentModeProps {
   onExitToStudent: () => void;
+  initialSection?: 'upload' | 'iread' | 'scores';
 }
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -582,8 +583,8 @@ function ScoresView({ onBack, studentId }: { onBack: () => void; studentId: numb
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
-export default function ParentMode({ onExitToStudent }: ParentModeProps) {
-  const [view, setView] = useState<ParentView>('dashboard');
+export default function ParentMode({ onExitToStudent, initialSection }: ParentModeProps) {
+  const [view, setView] = useState<ParentView>(initialSection ?? 'dashboard');
   const [files, setFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [uploadState, setUploadState] = useState<UploadState>('idle');

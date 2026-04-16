@@ -11,15 +11,16 @@ import StudentIRead from './components/iread/StudentIRead';
 import BottomNav from './components/layout/BottomNav';
 import StudentHome from './components/home/StudentHome';
 import PointsScreen from './components/home/PointsScreen';
+import ParentHome from './components/home/ParentHome';
+import TeacherHome from './components/home/TeacherHome';
 
-type StudentTab = 'home' | 'imath' | 'iread' | 'points';
+type AppTab = 'home' | 'imath' | 'iread' | 'points';
 
 function App() {
   const [user, setUser] = useState<AuthUser | null>(() => authService.getCurrentUser());
-  const [studentTab, setStudentTab] = useState<StudentTab>('home');
+  const [activeTab, setActiveTab] = useState<AppTab>('home');
   const [taskCount, setTaskCount] = useState(0);
 
-  // Auto-logout when any API call returns 401 (expired/invalid token)
   useEffect(() => {
     return onUnauthorized(() => {
       setUser(null);
@@ -28,46 +29,62 @@ function App() {
 
   const handleLogin = (loggedInUser: AuthUser) => {
     setUser(loggedInUser);
-    setStudentTab('home');
+    setActiveTab('home');
+    setTaskCount(0);
   };
 
   const handleLogout = () => {
     authService.logout();
     setUser(null);
-    setStudentTab('home');
+    setActiveTab('home');
+    setTaskCount(0);
   };
 
   if (!user) {
     return <LoginPage onLogin={handleLogin} />;
   }
 
+  // ── Admin — full dashboard, no bottom nav ────────────────────────────────
   if (user.role === 'admin') {
     return <AdminDashboard onLogout={handleLogout} />;
   }
 
+  // ── Teacher ──────────────────────────────────────────────────────────────
   if (user.role === 'teacher') {
-    return <TeacherView onLogout={handleLogout} />;
+    return (
+      <div style={{ minHeight: '100vh', background: '#eff6ff' }}>
+        {activeTab === 'home'   && <TeacherHome onNavigate={setActiveTab} />}
+        {activeTab === 'imath'  && <TeacherView initialTab="generate" />}
+        {activeTab === 'iread'  && <TeacherView initialTab="iread" />}
+        {activeTab === 'points' && <TeacherView initialTab="students" />}
+        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} role="teacher" />
+      </div>
+    );
   }
 
+  // ── Parent ───────────────────────────────────────────────────────────────
   if (user.role === 'parent') {
-    return <ParentMode onExitToStudent={handleLogout} />;
+    return (
+      <div style={{ minHeight: '100vh', background: '#f0fdfa' }}>
+        {activeTab === 'home'   && <ParentHome onNavigate={setActiveTab} />}
+        {activeTab === 'imath'  && <ParentMode initialSection="upload"  onExitToStudent={handleLogout} />}
+        {activeTab === 'iread'  && <ParentMode initialSection="iread"   onExitToStudent={handleLogout} />}
+        {activeTab === 'points' && <ParentMode initialSection="scores"  onExitToStudent={handleLogout} />}
+        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} role="parent" />
+      </div>
+    );
   }
 
-  // ── Student ─────────────────────────────────────────────────────────────────
+  // ── Student ──────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f3f0ff' }}>
-      {studentTab === 'home' && (
-        <StudentHome
-          onNavigate={(tab) => setStudentTab(tab)}
-          onTaskCount={setTaskCount}
-        />
-      )}
-      {studentTab === 'imath' && <StudentMode onSwitchToParent={handleLogout} />}
-      {studentTab === 'iread' && <StudentIRead />}
-      {studentTab === 'points' && <PointsScreen />}
+      {activeTab === 'home'   && <StudentHome onNavigate={setActiveTab} onTaskCount={setTaskCount} />}
+      {activeTab === 'imath'  && <StudentMode onSwitchToParent={handleLogout} />}
+      {activeTab === 'iread'  && <StudentIRead />}
+      {activeTab === 'points' && <PointsScreen />}
       <BottomNav
-        activeTab={studentTab}
-        onTabChange={setStudentTab}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         role="student"
         taskCount={taskCount}
       />
