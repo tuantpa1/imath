@@ -11,6 +11,7 @@ import teacherRoutes from './routes/teacherRoutes';
 import parentRoutes from './routes/parentRoutes';
 import adminRoutes from './routes/adminRoutes';
 import ireadRoutes from './routes/ireadRoutes';
+import dashboardRoutes from './routes/dashboardRoutes';
 
 const app = express();
 const PORT = 3001;
@@ -36,6 +37,7 @@ app.use('/api/admin', authMiddleware, adminRoutes);
 app.use('/api/teacher', authMiddleware, teacherRoutes);
 app.use('/api/parent', authMiddleware, parentRoutes);
 app.use('/api/iread', authMiddleware, ireadRoutes);
+app.use('/api/dashboard', authMiddleware, dashboardRoutes);
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`iMath backend running on http://0.0.0.0:${PORT}`);
