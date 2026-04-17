@@ -354,23 +354,9 @@ Return JSON array only, NO markdown backticks:
 ]`;
   }
 
-  // Try Gemini first; fall back to Groq if Gemini is unavailable (503, quota, etc.)
-  try {
-    const result = await getModel().generateContent(prompt);
-    const cleaned = cleanJson(result.response.text());
-    return JSON.parse(cleaned) as ReadingQuestion[];
-  } catch (geminiErr) {
-    console.warn('[iRead] Gemini failed, falling back to Groq:', (geminiErr as Error).message);
-    const Groq = (await import('groq-sdk')).default;
-    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-    const response = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-    });
-    const text = response.choices[0].message.content ?? '';
-    return JSON.parse(cleanJson(text)) as ReadingQuestion[];
-  }
+  const result = await getModel().generateContent(prompt);
+  const cleaned = cleanJson(result.response.text());
+  return JSON.parse(cleaned) as ReadingQuestion[];
 }
 
 // ── Skip question generation ──────────────────────────────────────────────────
