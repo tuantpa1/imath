@@ -594,7 +594,7 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
 
       {/* ── Step 2: Upload images, then process ── */}
       {step === 2 && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 pb-28">
           <div className="bg-white rounded-3xl shadow-xl p-5 border border-emerald-100">
             <h3 className="font-extrabold text-emerald-700 text-base mb-1">📷 Upload trang sách</h3>
             <p className="text-xs text-gray-400 mb-4">Kéo thả để sắp xếp lại thứ tự trang</p>

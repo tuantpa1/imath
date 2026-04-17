@@ -354,9 +354,23 @@ Return JSON array only, NO markdown backticks:
 ]`;
   }
 
-  const result = await getModel().generateContent(prompt);
-  const cleaned = cleanJson(result.response.text());
-  return JSON.parse(cleaned) as ReadingQuestion[];
+  // Try Gemini first; fall back to Claude if Gemini is unavailable (503, quota, etc.)
+  try {
+    const result = await getModel().generateContent(prompt);
+    const cleaned = cleanJson(result.response.text());
+    return JSON.parse(cleaned) as ReadingQuestion[];
+  } catch (geminiErr) {
+    console.warn('[iRead] Gemini generateReadingQuestions failed, falling back to Claude:', (geminiErr as Error).message);
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const msg = await claude.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const text = msg.content[0].type === 'text' ? msg.content[0].text : '';
+    return JSON.parse(cleanJson(text)) as ReadingQuestion[];
+  }
 }
 
 // ── Skip question generation ──────────────────────────────────────────────────
