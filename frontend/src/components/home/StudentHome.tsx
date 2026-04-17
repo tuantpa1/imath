@@ -58,7 +58,7 @@ export default function StudentHome({ onNavigate, onTaskCount }: Props) {
   return (
     <div
       className="min-h-screen animate-fade-in"
-      style={{ background: '#f3f0ff', paddingBottom: '80px' }}
+      style={{ background: '#f3f0ff' }}
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ background: 'linear-gradient(135deg, #5B3FD4 0%, #7C3AED 60%, #9333EA 100%)' }}>

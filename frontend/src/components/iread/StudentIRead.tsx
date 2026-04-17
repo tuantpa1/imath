@@ -627,7 +627,7 @@ export default function StudentIRead() {
   // ── BOOKSHELF SCREEN ──────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-teal-50 pb-8">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-teal-50">
       {/* Header with filters */}
       <div className="bg-emerald-600 px-4 pt-5 pb-4">
         <h1 className="font-extrabold text-white text-xl mb-4">📚 Ngăn Sách Của Con</h1>

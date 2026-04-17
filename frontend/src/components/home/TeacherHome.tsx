@@ -56,7 +56,7 @@ export default function TeacherHome({ onNavigate }: Props) {
   const ci = data?.classInfo;
 
   return (
-    <div className="min-h-screen animate-fade-in" style={{ background: '#eff6ff', paddingBottom: '80px' }}>
+    <div className="min-h-screen animate-fade-in" style={{ background: '#eff6ff' }}>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ background: 'linear-gradient(135deg, #1D4ED8 0%, #2563eb 60%, #3b82f6 100%)' }}>
         {/* Top bar */}

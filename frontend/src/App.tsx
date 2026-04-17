@@ -52,7 +52,7 @@ function App() {
   // ── Teacher ──────────────────────────────────────────────────────────────
   if (user.role === 'teacher') {
     return (
-      <div style={{ minHeight: '100vh', background: '#eff6ff' }}>
+      <div style={{ minHeight: '100vh', background: '#eff6ff', paddingBottom: '80px' }}>
         {activeTab === 'home'   && <TeacherHome onNavigate={setActiveTab} />}
         {activeTab === 'imath'  && <TeacherView initialTab="generate" />}
         {activeTab === 'iread'  && <TeacherView initialTab="iread" />}
@@ -65,7 +65,7 @@ function App() {
   // ── Parent ───────────────────────────────────────────────────────────────
   if (user.role === 'parent') {
     return (
-      <div style={{ minHeight: '100vh', background: '#f0fdfa' }}>
+      <div style={{ minHeight: '100vh', background: '#f0fdfa', paddingBottom: '80px' }}>
         {activeTab === 'home'   && <ParentHome onNavigate={setActiveTab} />}
         {activeTab === 'imath'  && <ParentMode initialSection="upload"  onExitToStudent={handleLogout} />}
         {activeTab === 'iread'  && <ParentMode initialSection="iread"   onExitToStudent={handleLogout} />}
@@ -77,7 +77,7 @@ function App() {
 
   // ── Student ──────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: '#f3f0ff' }}>
+    <div style={{ minHeight: '100vh', background: '#f3f0ff', paddingBottom: '80px' }}>
       {activeTab === 'home'   && <StudentHome onNavigate={setActiveTab} onTaskCount={setTaskCount} />}
       {activeTab === 'imath'  && <StudentMode onSwitchToParent={handleLogout} />}
       {activeTab === 'iread'  && <StudentIRead />}

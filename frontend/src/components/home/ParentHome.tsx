@@ -59,7 +59,7 @@ export default function ParentHome({ onNavigate }: Props) {
   const child = data?.children[selectedIdx] ?? null;
 
   return (
-    <div className="min-h-screen animate-fade-in" style={{ background: '#f0fdfa', paddingBottom: '80px' }}>
+    <div className="min-h-screen animate-fade-in" style={{ background: '#f0fdfa' }}>
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ background: 'linear-gradient(135deg, #0F766E 0%, #0d9488 60%, #14b8a6 100%)' }}>
         {/* Top bar */}

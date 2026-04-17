@@ -39,7 +39,7 @@ export default function PointsScreen() {
   return (
     <div
       className="min-h-screen animate-fade-in"
-      style={{ background: '#f5f3ff', paddingBottom: '80px' }}
+      style={{ background: '#f5f3ff' }}
     >
       {/* Header */}
       <div style={{ background: 'linear-gradient(135deg, #5B3FD4 0%, #7C3AED 100%)' }} className="px-5 pt-5 pb-6">
