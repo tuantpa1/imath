@@ -593,8 +593,32 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
       )}
 
       {/* ── Step 2: Upload images, then process ── */}
+      {step === 2 && uploadedImages.length > 0 && (
+        <div style={{
+          position: 'fixed', bottom: '70px', left: 0, right: 0,
+          padding: '12px 16px', background: 'white', zIndex: 90,
+          boxShadow: '0 -2px 12px rgba(0,0,0,0.08)',
+        }}>
+          {processing && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-center mb-2">
+              <p className="font-bold text-emerald-700 text-sm">
+                ⏳ Đang OCR {uploadedImages.reduce((s, img) => s + (img.isDoublePage ? 2 : 1), 0)} trang và tạo câu hỏi...
+              </p>
+              <p className="text-xs text-emerald-500 mt-0.5">Có thể mất 30–60 giây, vui lòng đợi</p>
+            </div>
+          )}
+          <button
+            onClick={() => { void handleProcess(); }}
+            disabled={processing}
+            className="btn-scale w-full py-3.5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-extrabold text-base shadow-lg transition-all"
+          >
+            {processing ? '⏳ Đang xử lý...' : '🤖 Xử lý OCR & Tạo câu hỏi'}
+          </button>
+        </div>
+      )}
+
       {step === 2 && (
-        <div className="flex flex-col gap-3 pb-28">
+        <div className="flex flex-col gap-3 pb-40">
           <div className="bg-white rounded-3xl shadow-xl p-5 border border-emerald-100">
             <h3 className="font-extrabold text-emerald-700 text-base mb-1">📷 Upload trang sách</h3>
             <p className="text-xs text-gray-400 mb-4">Kéo thả để sắp xếp lại thứ tự trang</p>
@@ -671,23 +695,6 @@ function AddBookWizard({ onDone }: { onDone: () => void }) {
             </div>
           )}
 
-          {processing && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-center">
-              <span className="text-2xl animate-spin inline-block mb-2">⭐</span>
-              <p className="font-bold text-emerald-700 text-sm">
-                Đang OCR {uploadedImages.reduce((s, img) => s + (img.isDoublePage ? 2 : 1), 0)} trang và tạo câu hỏi...
-              </p>
-              <p className="text-xs text-emerald-500 mt-1">Có thể mất 30–60 giây, vui lòng đợi</p>
-            </div>
-          )}
-
-          <button
-            onClick={() => { void handleProcess(); }}
-            disabled={uploadedImages.length === 0 || processing}
-            className="btn-scale w-full py-3.5 rounded-3xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 text-white font-extrabold text-base shadow-lg transition-all"
-          >
-            {processing ? '⏳ Đang xử lý...' : '🤖 Xử lý OCR & Tạo câu hỏi'}
-          </button>
         </div>
       )}
 

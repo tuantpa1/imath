@@ -354,21 +354,21 @@ Return JSON array only, NO markdown backticks:
 ]`;
   }
 
-  // Try Gemini first; fall back to Claude if Gemini is unavailable (503, quota, etc.)
+  // Try Gemini first; fall back to Groq if Gemini is unavailable (503, quota, etc.)
   try {
     const result = await getModel().generateContent(prompt);
     const cleaned = cleanJson(result.response.text());
     return JSON.parse(cleaned) as ReadingQuestion[];
   } catch (geminiErr) {
-    console.warn('[iRead] Gemini generateReadingQuestions failed, falling back to Claude:', (geminiErr as Error).message);
-    const Anthropic = (await import('@anthropic-ai/sdk')).default;
-    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    const msg = await claude.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
+    console.warn('[iRead] Gemini failed, falling back to Groq:', (geminiErr as Error).message);
+    const Groq = (await import('groq-sdk')).default;
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const response = await groq.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
     });
-    const text = msg.content[0].type === 'text' ? msg.content[0].text : '';
+    const text = response.choices[0].message.content ?? '';
     return JSON.parse(cleanJson(text)) as ReadingQuestion[];
   }
 }
